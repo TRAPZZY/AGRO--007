@@ -7,44 +7,87 @@ import { Progress } from "@/components/ui/progress"
 import Image from "next/image"
 
 interface ProjectCardProps {
-  id: string
-  title: string
-  description: string
-  image: string
-  fundingGoal: number
-  amountRaised: number
-  category: string
-  farmerName: string
-  location: string
+  id?: string
+  title?: string
+  description?: string
+  image?: string
+  image_url?: string
+  fundingGoal?: number
+  funding_goal?: number
+  amountRaised?: number
+  amount_raised?: number
+  category?: string
+  farmerName?: string
+  farmer_name?: string
+  location?: string
   onInvest?: (projectId: string) => void
+  expected_return?: number
+  risk_level?: string
 }
 
 export function ProjectCard({
-  id,
-  title,
-  description,
+  id = "",
+  title = "Untitled Project",
+  description = "No description available",
   image,
+  image_url,
   fundingGoal,
+  funding_goal,
   amountRaised,
-  category,
+  amount_raised,
+  category = "general",
   farmerName,
-  location,
+  farmer_name,
+  location = "Unknown Location",
   onInvest,
+  expected_return = 0,
+  risk_level = "medium",
 }: ProjectCardProps) {
-  const progressPercentage = (amountRaised / fundingGoal) * 100
+  // Normalize prop names and provide defaults
+  const projectId = id || ""
+  const projectTitle = title || "Untitled Project"
+  const projectDescription = description || "No description available"
+  const projectImage = image_url || image || "/placeholder.svg?height=200&width=300"
+  const projectFundingGoal = funding_goal || fundingGoal || 0
+  const projectAmountRaised = amount_raised || amountRaised || 0
+  const projectCategory = category || "general"
+  const projectFarmerName = farmerName || farmer_name || "Unknown Farmer"
+  const projectLocation = location || "Unknown Location"
+  const projectExpectedReturn = expected_return || 0
+  const projectRiskLevel = risk_level || "medium"
+
+  // Safe calculation with fallback
+  const progressPercentage = projectFundingGoal > 0 ? (projectAmountRaised / projectFundingGoal) * 100 : 0
+
+  const handleInvestClick = () => {
+    if (onInvest && projectId) {
+      onInvest(projectId)
+    }
+  }
 
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow">
       <div className="relative h-48">
-        <Image src={image || "/placeholder.svg"} alt={title} fill className="object-cover" />
-        <Badge className="absolute top-2 right-2 bg-green-600">{category}</Badge>
+        <Image
+          src={projectImage || "/placeholder.svg"}
+          alt={projectTitle}
+          fill
+          className="object-cover"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement
+            target.src = "/placeholder.svg?height=200&width=300"
+          }}
+        />
+        <Badge className="absolute top-2 right-2 bg-green-600 text-white">
+          {projectCategory.charAt(0).toUpperCase() + projectCategory.slice(1)}
+        </Badge>
       </div>
       <CardHeader>
-        <CardTitle className="text-lg">{title}</CardTitle>
-        <p className="text-sm text-gray-600">{description}</p>
+        <CardTitle className="text-lg line-clamp-2">{projectTitle}</CardTitle>
+        <p className="text-sm text-gray-600 line-clamp-2">{projectDescription}</p>
         <div className="text-sm text-gray-500">
-          <p>Farmer: {farmerName}</p>
-          <p>Location: {location}</p>
+          <p>Farmer: {projectFarmerName}</p>
+          <p>Location: {projectLocation}</p>
         </div>
       </CardHeader>
       <CardContent>
@@ -54,19 +97,29 @@ export function ProjectCard({
               <span>Progress</span>
               <span>{progressPercentage.toFixed(1)}%</span>
             </div>
-            <Progress value={progressPercentage} className="h-2" />
+            <Progress value={Math.min(progressPercentage, 100)} className="h-2" />
           </div>
           <div className="flex justify-between items-center">
             <div>
               <p className="text-sm text-gray-600">Raised</p>
-              <p className="font-semibold">₦{amountRaised.toLocaleString()}</p>
+              <p className="font-semibold">₦{projectAmountRaised.toLocaleString()}</p>
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-600">Goal</p>
-              <p className="font-semibold">₦{fundingGoal.toLocaleString()}</p>
+              <p className="font-semibold">₦{projectFundingGoal.toLocaleString()}</p>
             </div>
           </div>
-          <Button className="w-full bg-green-600 hover:bg-green-700" onClick={() => onInvest?.(id)}>
+          {projectExpectedReturn > 0 && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">Expected Return</span>
+              <span className="font-semibold text-green-600">{projectExpectedReturn}%</span>
+            </div>
+          )}
+          <Button
+            className="w-full bg-green-600 hover:bg-green-700"
+            onClick={handleInvestClick}
+            disabled={!projectId || !onInvest}
+          >
             Invest Now
           </Button>
         </div>

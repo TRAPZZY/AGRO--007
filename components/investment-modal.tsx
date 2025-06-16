@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/lib/hooks/use-toast"
-import { supabase } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/client"
 import { getCurrentUser } from "@/lib/auth"
 import { MapPin, Target, TrendingUp, AlertTriangle } from "lucide-react"
 
@@ -25,8 +25,13 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user } = await getCurrentUser()
-      setUser(user)
+      try {
+        const { user } = await getCurrentUser()
+        setUser(user)
+      } catch (error) {
+        console.error("Auth check failed:", error)
+        setUser(null)
+      }
     }
     checkAuth()
   }, [])
@@ -35,7 +40,7 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
     if (!user || !project || !amount) return
 
     const investmentAmount = Number.parseInt(amount)
-    if (investmentAmount <= 0) {
+    if (investmentAmount <= 0 || isNaN(investmentAmount)) {
       toast({
         title: "Invalid Amount",
         description: "Please enter a valid investment amount.",
@@ -44,7 +49,11 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
       return
     }
 
-    if (investmentAmount > project.funding_goal - project.amount_raised) {
+    const projectFundingGoal = project.funding_goal || project.fundingGoal || 0
+    const projectAmountRaised = project.amount_raised || project.amountRaised || 0
+    const remainingAmount = projectFundingGoal - projectAmountRaised
+
+    if (investmentAmount > remainingAmount) {
       toast({
         title: "Amount Too High",
         description: "Investment amount exceeds remaining funding needed.",
@@ -56,6 +65,8 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
     setIsLoading(true)
 
     try {
+      const supabase = createClient()
+
       // Create investment record
       const { data: investment, error: investmentError } = await supabase
         .from("investments")
@@ -63,7 +74,7 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
           investor_id: user.id,
           project_id: project.id,
           amount: investmentAmount,
-          expected_return: project.expected_return,
+          expected_return: project.expected_return || 15,
           status: "active",
         })
         .select()
@@ -72,8 +83,8 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
       if (investmentError) throw investmentError
 
       // Update project funding
-      const newAmountRaised = project.amount_raised + investmentAmount
-      const newStatus = newAmountRaised >= project.funding_goal ? "funded" : "active"
+      const newAmountRaised = projectAmountRaised + investmentAmount
+      const newStatus = newAmountRaised >= projectFundingGoal ? "funded" : "active"
 
       const { error: updateError } = await supabase
         .from("projects")
@@ -87,7 +98,7 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
 
       toast({
         title: "Investment Successful!",
-        description: `You've invested ₦${investmentAmount.toLocaleString()} in ${project.title}`,
+        description: `You've invested ₦${investmentAmount.toLocaleString()} in ${project.title || "this project"}`,
         type: "success",
       })
 
@@ -104,17 +115,26 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
     }
   }
 
+  // Return null if no project
   if (!project) return null
 
-  const remainingAmount = project.funding_goal - project.amount_raised
-  const progressPercentage = (project.amount_raised / project.funding_goal) * 100
+  // Safe property access with defaults
+  const projectTitle = project.title || "Unknown Project"
+  const projectLocation = project.location || "Unknown Location"
+  const projectFundingGoal = project.funding_goal || project.fundingGoal || 0
+  const projectAmountRaised = project.amount_raised || project.amountRaised || 0
+  const projectExpectedReturn = project.expected_return || 15
+  const projectRiskLevel = project.risk_level || "medium"
+
+  const remainingAmount = Math.max(0, projectFundingGoal - projectAmountRaised)
+  const progressPercentage = projectFundingGoal > 0 ? (projectAmountRaised / projectFundingGoal) * 100 : 0
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Invest in Project</DialogTitle>
-          <DialogDescription>Make an investment in {project.title}</DialogDescription>
+          <DialogDescription>Make an investment in {projectTitle}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -122,17 +142,17 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
           <div className="space-y-3">
             <div className="flex items-center text-sm text-gray-600">
               <MapPin className="w-4 h-4 mr-1" />
-              {project.location}
+              {projectLocation}
             </div>
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="flex items-center">
                 <Target className="w-4 h-4 mr-1 text-blue-600" />
-                <span>Goal: ₦{project.funding_goal?.toLocaleString()}</span>
+                <span>Goal: ₦{projectFundingGoal.toLocaleString()}</span>
               </div>
               <div className="flex items-center">
                 <TrendingUp className="w-4 h-4 mr-1 text-green-600" />
-                <span>Return: {project.expected_return}%</span>
+                <span>Return: {projectExpectedReturn}%</span>
               </div>
             </div>
 
@@ -148,7 +168,7 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
                 />
               </div>
               <div className="flex justify-between text-xs text-gray-500">
-                <span>Raised: ₦{project.amount_raised?.toLocaleString()}</span>
+                <span>Raised: ₦{projectAmountRaised.toLocaleString()}</span>
                 <span>Remaining: ₦{remainingAmount.toLocaleString()}</span>
               </div>
             </div>
@@ -172,7 +192,7 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
               </p>
             </div>
 
-            {project.risk_level === "high" && (
+            {projectRiskLevel === "high" && (
               <div className="flex items-start space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                 <div className="text-sm text-yellow-800">
@@ -191,7 +211,7 @@ export function InvestmentModal({ isOpen, onClose, project }: InvestmentModalPro
             <Button
               onClick={handleInvest}
               className="flex-1 bg-green-600 hover:bg-green-700"
-              disabled={isLoading || !amount || !user}
+              disabled={isLoading || !amount || !user || remainingAmount <= 0}
             >
               {isLoading ? (
                 <>

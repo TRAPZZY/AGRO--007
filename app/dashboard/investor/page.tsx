@@ -11,11 +11,12 @@ import { DollarSign, TrendingUp, PieChart, Target } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
-import { supabase } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/client"
 
 export default function InvestorDashboard() {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isInitialized, setIsInitialized] = useState(false)
   const [stats, setStats] = useState({
     totalInvested: 0,
     activeInvestments: 0,
@@ -27,23 +28,30 @@ export default function InvestorDashboard() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user, error } = await getCurrentUser()
+      try {
+        const { user, error } = await getCurrentUser()
 
-      if (!user) {
+        if (!user) {
+          router.push("/login")
+          return
+        }
+
+        setUser(user)
+        setIsInitialized(true)
+      } catch (err) {
+        console.error("Auth error:", err)
         router.push("/login")
-        return
       }
-
-      setUser(user)
-      await fetchStats(user.id)
-      setIsLoading(false)
     }
 
     checkAuth()
   }, [router])
 
   const fetchStats = async (investorId: string) => {
+    if (!investorId) return
+
     try {
+      const supabase = createClient()
       const { data: investments, error } = await supabase
         .from("investments")
         .select(`
@@ -52,13 +60,18 @@ export default function InvestorDashboard() {
         `)
         .eq("investor_id", investorId)
 
-      if (error) throw error
+      if (error) {
+        console.error("Stats fetch error:", error)
+        return
+      }
 
-      const totalInvested = investments?.reduce((sum, inv) => sum + inv.amount, 0) || 0
-      const activeInvestments = investments?.filter((inv) => inv.status === "active").length || 0
+      const totalInvested = investments?.reduce((sum, inv) => sum + (inv?.amount || 0), 0) || 0
+      const activeInvestments = investments?.filter((inv) => inv?.status === "active").length || 0
       const expectedReturns =
         investments?.reduce((sum, inv) => {
-          return sum + inv.amount * (inv.expected_return / 100)
+          const amount = inv?.amount || 0
+          const expectedReturn = inv?.expected_return || 0
+          return sum + amount * (expectedReturn / 100)
         }, 0) || 0
       const portfolioGrowth =
         totalInvested > 0 ? Math.round(((expectedReturns - totalInvested) / totalInvested) * 100) : 0
@@ -71,13 +84,22 @@ export default function InvestorDashboard() {
       })
     } catch (error: any) {
       console.error("Error fetching stats:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
+  useEffect(() => {
+    if (user?.id && isInitialized) {
+      fetchStats(user.id)
+    }
+  }, [user?.id, isInitialized])
+
   // Real-time subscription for investment updates
   useEffect(() => {
-    if (!user) return
+    if (!user?.id || !isInitialized) return
 
+    const supabase = createClient()
     const subscription = supabase
       .channel("investor_dashboard")
       .on(
@@ -89,31 +111,36 @@ export default function InvestorDashboard() {
           filter: `investor_id=eq.${user.id}`,
         },
         (payload) => {
-          if (payload.eventType === "INSERT") {
+          if (payload.eventType === "INSERT" && payload.new) {
             toast({
               title: "Investment Confirmed!",
-              description: `Your investment of ₦${payload.new.amount.toLocaleString()} has been processed.`,
+              description: `Your investment of ₦${(payload.new.amount || 0).toLocaleString()} has been processed.`,
               type: "success",
             })
           }
           // Refresh stats
-          fetchStats(user.id)
+          if (user?.id) {
+            fetchStats(user.id)
+          }
         },
       )
       .subscribe()
 
     return () => {
-      subscription.unsubscribe()
+      supabase.removeChannel(subscription)
     }
-  }, [user, toast])
+  }, [user?.id, isInitialized, toast])
 
-  if (isLoading) {
+  if (isLoading || !isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     )
   }
+
+  // Safe user data access
+  const userName = user?.user_metadata?.name || user?.email || "Investor"
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -122,9 +149,7 @@ export default function InvestorDashboard() {
       <div className="flex-1 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-              Welcome back, {user?.user_metadata?.name || user?.email}!
-            </h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Welcome back, {userName}!</h1>
             <p className="text-gray-600 mt-2">Track your investments and discover new opportunities</p>
           </div>
 

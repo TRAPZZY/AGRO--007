@@ -11,11 +11,12 @@ import { Plus, DollarSign, Users, TrendingUp, Leaf } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
-import { supabase } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/client"
 
 export default function FarmerDashboard() {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isInitialized, setIsInitialized] = useState(false)
   const [stats, setStats] = useState({
     totalProjects: 0,
     totalRaised: 0,
@@ -27,43 +28,62 @@ export default function FarmerDashboard() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user, error } = await getCurrentUser()
+      try {
+        const { user, error } = await getCurrentUser()
 
-      if (!user) {
+        if (!user) {
+          router.push("/login")
+          return
+        }
+
+        setUser(user)
+        setIsInitialized(true)
+      } catch (err) {
+        console.error("Auth error:", err)
         router.push("/login")
-        return
       }
-
-      setUser(user)
-      await fetchStats(user.id)
-      setIsLoading(false)
     }
 
     checkAuth()
   }, [router])
 
   const fetchStats = async (farmerId: string) => {
+    if (!farmerId) return
+
     try {
+      const supabase = createClient()
+
       // Fetch projects stats
       const { data: projects, error: projectsError } = await supabase
         .from("projects")
         .select("*")
         .eq("farmer_id", farmerId)
 
-      if (projectsError) throw projectsError
+      if (projectsError) {
+        console.error("Projects fetch error:", projectsError)
+        return
+      }
 
       // Fetch investments for this farmer's projects
-      const projectIds = projects?.map((p) => p.id) || []
-      const { data: investments, error: investmentsError } = await supabase
-        .from("investments")
-        .select("*")
-        .in("project_id", projectIds)
+      const projectIds = projects?.map((p) => p.id).filter(Boolean) || []
+      let investments: any[] = []
 
-      if (investmentsError) throw investmentsError
+      if (projectIds.length > 0) {
+        const { data: investmentsData, error: investmentsError } = await supabase
+          .from("investments")
+          .select("*")
+          .in("project_id", projectIds)
 
-      const totalRaised = projects?.reduce((sum, p) => sum + (p.amount_raised || 0), 0) || 0
-      const uniqueInvestors = new Set(investments?.map((inv) => inv.investor_id)).size
-      const completedProjects = projects?.filter((p) => p.status === "completed").length || 0
+        if (investmentsError) {
+          console.error("Investments fetch error:", investmentsError)
+        } else {
+          investments = investmentsData || []
+        }
+      }
+
+      const totalRaised = projects?.reduce((sum, p) => sum + (p?.amount_raised || 0), 0) || 0
+      const uniqueInvestors = new Set(investments?.map((inv) => inv?.investor_id).filter(Boolean)).size
+      const completedProjects = projects?.filter((p) => p?.status === "completed").length || 0
       const successRate = projects?.length ? Math.round((completedProjects / projects.length) * 100) : 0
 
       setStats({
@@ -74,13 +94,22 @@ export default function FarmerDashboard() {
       })
     } catch (error: any) {
       console.error("Error fetching stats:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
+  useEffect(() => {
+    if (user?.id && isInitialized) {
+      fetchStats(user.id)
+    }
+  }, [user?.id, isInitialized])
+
   // Real-time subscription for project updates
   useEffect(() => {
-    if (!user) return
+    if (!user?.id || !isInitialized) return
 
+    const supabase = createClient()
     const subscription = supabase
       .channel("farmer_dashboard")
       .on(
@@ -92,35 +121,42 @@ export default function FarmerDashboard() {
           filter: `farmer_id=eq.${user.id}`,
         },
         (payload) => {
-          if (payload.eventType === "UPDATE") {
+          if (payload.eventType === "UPDATE" && payload.new && payload.old) {
             // Show notification for new investments
-            if (payload.new.amount_raised > payload.old.amount_raised) {
-              const newInvestment = payload.new.amount_raised - payload.old.amount_raised
+            const newAmount = payload.new.amount_raised || 0
+            const oldAmount = payload.old.amount_raised || 0
+            if (newAmount > oldAmount) {
+              const newInvestment = newAmount - oldAmount
               toast({
                 title: "New Investment Received!",
-                description: `₦${newInvestment.toLocaleString()} invested in ${payload.new.title}`,
+                description: `₦${newInvestment.toLocaleString()} invested in ${payload.new.title || "your project"}`,
                 type: "success",
               })
             }
           }
           // Refresh stats
-          fetchStats(user.id)
+          if (user?.id) {
+            fetchStats(user.id)
+          }
         },
       )
       .subscribe()
 
     return () => {
-      subscription.unsubscribe()
+      supabase.removeChannel(subscription)
     }
-  }, [user, toast])
+  }, [user?.id, isInitialized, toast])
 
-  if (isLoading) {
+  if (isLoading || !isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     )
   }
+
+  // Safe user data access
+  const userName = user?.user_metadata?.name || user?.email || "Farmer"
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -129,9 +165,7 @@ export default function FarmerDashboard() {
       <div className="flex-1 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-              Welcome back, {user?.user_metadata?.name || user?.email}!
-            </h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Welcome back, {userName}!</h1>
             <p className="text-gray-600 mt-2">Manage your agricultural projects and track your progress</p>
           </div>
 

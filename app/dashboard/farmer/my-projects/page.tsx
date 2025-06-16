@@ -13,7 +13,7 @@ import { ToastContainer } from "@/components/ui/toast"
 import { Plus, Eye, Edit, Trash2, TrendingUp, Calendar, MapPin, DollarSign } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
-import { supabase } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/client"
 import { getCurrentUser } from "@/lib/auth"
 import { useRouter } from "next/navigation"
 
@@ -22,44 +22,68 @@ export default function MyProjectsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
   const { toasts, toast, removeToast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user } = await getCurrentUser()
-      if (!user) {
+      try {
+        const { user } = await getCurrentUser()
+        if (!user) {
+          router.push("/login")
+          return
+        }
+        setUser(user)
+        setIsInitialized(true)
+      } catch (err) {
+        console.error("Auth error:", err)
         router.push("/login")
-        return
       }
-      setUser(user)
-      fetchProjects(user.id)
     }
     checkAuth()
   }, [router])
 
   const fetchProjects = async (farmerId: string) => {
+    if (!farmerId) return
+
     try {
       setIsLoading(true)
-      const { data, error } = await supabase
+      setError(null)
+
+      const supabase = createClient()
+      const { data, error: fetchError } = await supabase
         .from("projects")
         .select("*")
         .eq("farmer_id", farmerId)
         .order("created_at", { ascending: false })
 
-      if (error) throw error
+      if (fetchError) {
+        console.error("Fetch error:", fetchError)
+        setError(fetchError.message)
+        return
+      }
+
       setProjects(data || [])
     } catch (err: any) {
-      setError(err.message)
+      console.error("Unexpected error:", err)
+      setError(err.message || "Failed to load projects")
     } finally {
       setIsLoading(false)
     }
   }
 
+  useEffect(() => {
+    if (user?.id && isInitialized) {
+      fetchProjects(user.id)
+    }
+  }, [user?.id, isInitialized])
+
   // Real-time subscription
   useEffect(() => {
-    if (!user) return
+    if (!user?.id || !isInitialized) return
 
+    const supabase = createClient()
     const subscription = supabase
       .channel("farmer_projects")
       .on(
@@ -71,15 +95,17 @@ export default function MyProjectsPage() {
           filter: `farmer_id=eq.${user.id}`,
         },
         (payload) => {
-          if (payload.eventType === "UPDATE") {
+          if (payload.eventType === "UPDATE" && payload.new && payload.old) {
             setProjects((prev) => prev.map((p) => (p.id === payload.new.id ? { ...p, ...payload.new } : p)))
 
             // Show notification for funding updates
-            if (payload.new.amount_raised > payload.old.amount_raised) {
-              const newInvestment = payload.new.amount_raised - payload.old.amount_raised
+            const newAmount = payload.new.amount_raised || 0
+            const oldAmount = payload.old.amount_raised || 0
+            if (newAmount > oldAmount) {
+              const newInvestment = newAmount - oldAmount
               toast({
                 title: "New Investment Received!",
-                description: `₦${newInvestment.toLocaleString()} invested in ${payload.new.title}`,
+                description: `₦${newInvestment.toLocaleString()} invested in ${payload.new.title || "your project"}`,
                 type: "success",
               })
             }
@@ -89,14 +115,15 @@ export default function MyProjectsPage() {
       .subscribe()
 
     return () => {
-      subscription.unsubscribe()
+      supabase.removeChannel(subscription)
     }
-  }, [user, toast])
+  }, [user?.id, isInitialized, toast])
 
   const deleteProject = async (projectId: string) => {
-    if (!confirm("Are you sure you want to delete this project?")) return
+    if (!projectId || !confirm("Are you sure you want to delete this project?")) return
 
     try {
+      const supabase = createClient()
       const { error } = await supabase.from("projects").delete().eq("id", projectId)
 
       if (error) throw error
@@ -110,13 +137,13 @@ export default function MyProjectsPage() {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to delete project",
         type: "error",
       })
     }
   }
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status = "draft") => {
     switch (status) {
       case "active":
         return "bg-blue-100 text-blue-800"
@@ -131,7 +158,7 @@ export default function MyProjectsPage() {
     }
   }
 
-  const getRiskColor = (risk: string) => {
+  const getRiskColor = (risk = "medium") => {
     switch (risk) {
       case "low":
         return "text-green-600 bg-green-100"
@@ -144,7 +171,8 @@ export default function MyProjectsPage() {
     }
   }
 
-  if (isLoading) {
+  // Show loading state until user is loaded and initialized
+  if (isLoading || !isInitialized) {
     return (
       <div className="flex min-h-screen bg-gray-50">
         <CollapsibleSidebar userRole="farmer" />
@@ -158,9 +186,10 @@ export default function MyProjectsPage() {
     )
   }
 
-  const totalRaised = projects.reduce((sum, p) => sum + (p.amount_raised || 0), 0)
-  const activeProjects = projects.filter((p) => p.status === "active").length
-  const fundedProjects = projects.filter((p) => p.status === "funded").length
+  // Safe calculations with defaults
+  const totalRaised = projects.reduce((sum, p) => sum + (p?.amount_raised || 0), 0)
+  const activeProjects = projects.filter((p) => p?.status === "active").length
+  const fundedProjects = projects.filter((p) => p?.status === "funded").length
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -263,35 +292,51 @@ export default function MyProjectsPage() {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
               {projects.map((project) => {
-                const progressPercentage = (project.amount_raised / project.funding_goal) * 100
+                // Safe property access with defaults
+                const projectId = project?.id || ""
+                const projectTitle = project?.title || "Untitled Project"
+                const projectDescription = project?.description || "No description available"
+                const projectImageUrl = project?.image_url || "/placeholder.svg?height=200&width=300"
+                const projectFundingGoal = project?.funding_goal || 0
+                const projectAmountRaised = project?.amount_raised || 0
+                const projectStatus = project?.status || "draft"
+                const projectRiskLevel = project?.risk_level || "medium"
+                const projectLocation = project?.location || "Unknown Location"
+                const projectExpectedReturn = project?.expected_return || 0
+
+                const progressPercentage = projectFundingGoal > 0 ? (projectAmountRaised / projectFundingGoal) * 100 : 0
 
                 return (
-                  <Card key={project.id} className="overflow-hidden">
+                  <Card key={projectId} className="overflow-hidden">
                     <div className="relative h-48">
                       <Image
-                        src={project.image_url || "/placeholder.svg?height=200&width=300"}
-                        alt={project.title}
+                        src={projectImageUrl || "/placeholder.svg"}
+                        alt={projectTitle}
                         fill
                         className="object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.src = "/placeholder.svg?height=200&width=300"
+                        }}
                       />
                       <div className="absolute top-3 left-3">
-                        <Badge className={getStatusColor(project.status)} variant="secondary">
-                          {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                        <Badge className={getStatusColor(projectStatus)} variant="secondary">
+                          {projectStatus.charAt(0).toUpperCase() + projectStatus.slice(1)}
                         </Badge>
                       </div>
                       <div className="absolute top-3 right-3">
-                        <Badge className={getRiskColor(project.risk_level)} variant="secondary">
-                          {project.risk_level.charAt(0).toUpperCase() + project.risk_level.slice(1)} Risk
+                        <Badge className={getRiskColor(projectRiskLevel)} variant="secondary">
+                          {projectRiskLevel.charAt(0).toUpperCase() + projectRiskLevel.slice(1)} Risk
                         </Badge>
                       </div>
                     </div>
 
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-lg line-clamp-2">{project.title}</CardTitle>
-                      <CardDescription className="line-clamp-2">{project.description}</CardDescription>
+                      <CardTitle className="text-lg line-clamp-2">{projectTitle}</CardTitle>
+                      <CardDescription className="line-clamp-2">{projectDescription}</CardDescription>
                       <div className="flex items-center text-sm text-gray-500 mt-2">
                         <MapPin className="w-4 h-4 mr-1" />
-                        {project.location}
+                        {projectLocation}
                       </div>
                     </CardHeader>
 
@@ -303,26 +348,28 @@ export default function MyProjectsPage() {
                             <span className="text-gray-600">Progress</span>
                             <span className="font-semibold">{progressPercentage.toFixed(1)}%</span>
                           </div>
-                          <Progress value={progressPercentage} className="h-2" />
+                          <Progress value={Math.min(progressPercentage, 100)} className="h-2" />
                         </div>
 
                         {/* Funding Info */}
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
                             <p className="text-gray-600">Raised</p>
-                            <p className="font-semibold text-green-600">₦{project.amount_raised.toLocaleString()}</p>
+                            <p className="font-semibold text-green-600">₦{projectAmountRaised.toLocaleString()}</p>
                           </div>
                           <div>
                             <p className="text-gray-600">Goal</p>
-                            <p className="font-semibold">₦{project.funding_goal.toLocaleString()}</p>
+                            <p className="font-semibold">₦{projectFundingGoal.toLocaleString()}</p>
                           </div>
                         </div>
 
                         {/* Expected Return */}
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-600">Expected Return</span>
-                          <span className="font-semibold text-green-600">{project.expected_return}%</span>
-                        </div>
+                        {projectExpectedReturn > 0 && (
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-600">Expected Return</span>
+                            <span className="font-semibold text-green-600">{projectExpectedReturn}%</span>
+                          </div>
+                        )}
 
                         {/* Action Buttons */}
                         <div className="flex space-x-2 pt-2">
@@ -338,7 +385,8 @@ export default function MyProjectsPage() {
                             variant="outline"
                             size="sm"
                             className="text-red-600 hover:text-red-700"
-                            onClick={() => deleteProject(project.id)}
+                            onClick={() => deleteProject(projectId)}
+                            disabled={!projectId}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
