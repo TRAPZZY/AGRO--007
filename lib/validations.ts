@@ -6,12 +6,9 @@ export const signUpSchema = z.object({
   password: z
     .string()
     .min(8, "Password must be at least 8 characters")
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must contain at least one uppercase letter, one lowercase letter, and one number",
-    ),
-  role: z.enum(["farmer", "investor"], {
-    required_error: "Please select a role",
+    .max(100, "Password must be less than 100 characters"),
+  role: z.enum(["farmer", "investor", "admin"], {
+    required_error: "Please select your role",
   }),
 })
 
@@ -24,38 +21,55 @@ export const projectSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters").max(100, "Title must be less than 100 characters"),
   description: z
     .string()
-    .min(50, "Description must be at least 50 characters")
+    .min(20, "Description must be at least 20 characters")
     .max(1000, "Description must be less than 1000 characters"),
-  fundingGoal: z
-    .number()
-    .min(10000, "Funding goal must be at least ₦10,000")
-    .max(50000000, "Funding goal cannot exceed ₦50,000,000"),
-  category: z.enum(["crops", "poultry", "livestock", "processing", "equipment"], {
+  category: z.enum(["crops", "livestock", "equipment", "processing", "other"], {
     required_error: "Please select a category",
   }),
-  location: z.string().min(2, "Please enter a valid location"),
-  expectedReturn: z.number().min(5, "Expected return must be at least 5%").max(50, "Expected return cannot exceed 50%"),
-  riskLevel: z.enum(["low", "medium", "high"], {
-    required_error: "Please select a risk level",
-  }),
-  startDate: z.string().min(1, "Start date is required"),
-  endDate: z.string().min(1, "End date is required"),
+  funding_goal: z
+    .number()
+    .min(1000, "Funding goal must be at least ₦1,000")
+    .max(100000000, "Funding goal must be less than ₦100,000,000"),
+  duration_months: z
+    .number()
+    .min(1, "Duration must be at least 1 month")
+    .max(60, "Duration must be less than 60 months"),
+  expected_return: z
+    .number()
+    .min(1, "Expected return must be at least 1%")
+    .max(100, "Expected return must be less than 100%"),
+  location: z
+    .string()
+    .min(2, "Location must be at least 2 characters")
+    .max(100, "Location must be less than 100 characters"),
 })
 
 export const investmentSchema = z.object({
   amount: z.number().min(1000, "Minimum investment is ₦1,000").max(10000000, "Maximum investment is ₦10,000,000"),
-  projectId: z.string().min(1, "Project ID is required"),
+  project_id: z.string().uuid("Invalid project ID"),
 })
 
-export const profileSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters").max(50, "Name must be less than 50 characters"),
-  phone: z.string().regex(/^\+234[0-9]{10}$/, "Please enter a valid Nigerian phone number (+234xxxxxxxxxx)"),
-  location: z.string().min(2, "Please enter a valid location"),
-  bio: z.string().max(500, "Bio must be less than 500 characters").optional(),
+export const kycSchema = z.object({
+  document_type: z.enum(["national_id", "passport", "drivers_license", "voters_card"], {
+    required_error: "Please select a document type",
+  }),
+  document_number: z
+    .string()
+    .min(5, "Document number must be at least 5 characters")
+    .max(50, "Document number must be less than 50 characters"),
+  phone_number: z
+    .string()
+    .min(10, "Phone number must be at least 10 digits")
+    .max(15, "Phone number must be less than 15 digits"),
+  address: z
+    .string()
+    .min(10, "Address must be at least 10 characters")
+    .max(200, "Address must be less than 200 characters"),
+  date_of_birth: z.string().min(1, "Date of birth is required"),
 })
 
 export type SignUpInput = z.infer<typeof signUpSchema>
 export type SignInInput = z.infer<typeof signInSchema>
 export type ProjectInput = z.infer<typeof projectSchema>
 export type InvestmentInput = z.infer<typeof investmentSchema>
-export type ProfileInput = z.infer<typeof profileSchema>
+export type KYCInput = z.infer<typeof kycSchema>

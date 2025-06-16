@@ -2,17 +2,17 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Leaf, Eye, EyeOff, AlertCircle } from "lucide-react"
+import { Leaf, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { signIn } from "@/lib/auth"
+import { useRouter, useSearchParams } from "next/navigation"
+import { signIn, getCurrentUser } from "@/lib/auth"
 import { signInSchema, type SignInInput } from "@/lib/validations"
 
 export default function LoginPage() {
@@ -23,12 +23,33 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Partial<SignInInput>>({})
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkExistingAuth = async () => {
+      try {
+        const { user } = await getCurrentUser()
+        if (user) {
+          // User is already logged in, redirect to appropriate dashboard
+          const dashboardPath = `/dashboard/${user.role || "investor"}`
+          router.push(dashboardPath)
+        }
+      } catch (error) {
+        // User is not logged in, continue with login flow
+      }
+    }
+
+    checkExistingAuth()
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setSuccess(null)
     setFieldErrors({})
 
     // Validate form data
@@ -55,20 +76,30 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
-        // Get user profile to determine role
+        setSuccess("Login successful! Redirecting to your dashboard...")
+
+        // Get the redirect URL from search params or determine based on role
+        const redirectTo = searchParams.get("redirect")
         const userRole = data.user.user_metadata?.role || "investor"
 
-        // Redirect based on role
-        if (userRole === "farmer") {
-          router.push("/dashboard/farmer")
-        } else if (userRole === "admin") {
-          router.push("/dashboard/admin")
-        } else {
-          router.push("/dashboard/investor")
-        }
+        setTimeout(() => {
+          if (redirectTo) {
+            router.push(redirectTo)
+          } else {
+            // Redirect based on role
+            if (userRole === "farmer") {
+              router.push("/dashboard/farmer")
+            } else if (userRole === "admin") {
+              router.push("/dashboard/admin")
+            } else {
+              router.push("/dashboard/investor")
+            }
+          }
+        }, 1000)
       }
-    } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
+    } catch (err: any) {
+      console.error("Login error:", err)
+      setError(err.message || "An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -80,6 +111,21 @@ export default function LoginPage() {
     if (fieldErrors[field]) {
       setFieldErrors((prev) => ({ ...prev, [field]: undefined }))
     }
+  }
+
+  const handleDemoLogin = async (role: "farmer" | "investor" | "admin") => {
+    const demoCredentials = {
+      farmer: { email: "farmer@demo.com", password: "password123" },
+      investor: { email: "investor@demo.com", password: "password123" },
+      admin: { email: "admin@demo.com", password: "password123" },
+    }
+
+    setFormData(demoCredentials[role])
+
+    // Auto-submit after setting demo credentials
+    setTimeout(() => {
+      handleSubmit({ preventDefault: () => {} } as React.FormEvent)
+    }, 100)
   }
 
   return (
@@ -109,6 +155,13 @@ export default function LoginPage() {
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {success && (
+                <Alert className="border-green-200 bg-green-50">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">{success}</AlertDescription>
                 </Alert>
               )}
 
@@ -181,11 +234,38 @@ export default function LoginPage() {
 
             {/* Demo accounts info */}
             <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm font-medium text-blue-900 mb-2">Demo Accounts:</p>
-              <div className="text-xs text-blue-700 space-y-1">
-                <p>Farmer: farmer@demo.com / password123</p>
-                <p>Investor: investor@demo.com / password123</p>
-                <p>Admin: admin@demo.com / password123</p>
+              <p className="text-sm font-medium text-blue-900 mb-3">Try Demo Accounts:</p>
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => handleDemoLogin("farmer")}
+                  disabled={isLoading}
+                >
+                  Demo Farmer Account
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => handleDemoLogin("investor")}
+                  disabled={isLoading}
+                >
+                  Demo Investor Account
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => handleDemoLogin("admin")}
+                  disabled={isLoading}
+                >
+                  Demo Admin Account
+                </Button>
               </div>
             </div>
           </CardContent>
