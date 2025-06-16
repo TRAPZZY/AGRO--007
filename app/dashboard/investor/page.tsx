@@ -51,16 +51,18 @@ export default function InvestorDashboard() {
     if (!investorId) return
 
     try {
-      const { data: investments, error } = await supabase
-        .from("investments")
-        .select(`
-          *,
-          projects(*)
-        `)
-        .eq("investor_id", investorId)
+      // First, get investments without the relationship
+      const { data: investments, error } = await supabase.from("investments").select("*").eq("investor_id", investorId)
 
       if (error) {
         console.error("Stats fetch error:", error)
+        // Fallback to demo data if database is unavailable
+        setStats({
+          totalInvested: 0,
+          activeInvestments: 0,
+          expectedReturns: 0,
+          portfolioGrowth: 0,
+        })
         return
       }
 
@@ -83,6 +85,13 @@ export default function InvestorDashboard() {
       })
     } catch (error: any) {
       console.error("Error fetching stats:", error)
+      // Graceful fallback
+      setStats({
+        totalInvested: 0,
+        activeInvestments: 0,
+        expectedReturns: 0,
+        portfolioGrowth: 0,
+      })
     } finally {
       setIsLoading(false)
     }
