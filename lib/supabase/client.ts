@@ -11,3 +11,6 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   },
 })
+
+// Export createClient as named export for compatibility
+export { createClient }
