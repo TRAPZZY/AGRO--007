@@ -6,28 +6,54 @@ export interface Toast {
   id: string
   title: string
   description?: string
-  type: "success" | "error" | "info" | "warning"
+  type: "success" | "error" | "warning" | "info"
   duration?: number
+  action?: {
+    label: string
+    onClick: () => void
+  }
 }
 
 export function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
-  const toast = useCallback(({ title, description, type, duration = 5000 }: Omit<Toast, "id">) => {
-    const id = Math.random().toString(36).substr(2, 9)
-    const newToast: Toast = { id, title, description, type, duration }
+  const toast = useCallback(
+    ({ title, description, type = "info", duration = 5000, action }: Omit<Toast, "id"> & { duration?: number }) => {
+      const id = Math.random().toString(36).substr(2, 9)
+      const newToast: Toast = {
+        id,
+        title,
+        description,
+        type,
+        action,
+      }
 
-    setToasts((prev) => [...prev, newToast])
+      setToasts((prev) => [...prev, newToast])
 
-    // Auto remove toast after duration
-    setTimeout(() => {
-      removeToast(id)
-    }, duration)
-  }, [])
+      // Auto remove after duration
+      if (duration > 0) {
+        setTimeout(() => {
+          removeToast(id)
+        }, duration)
+      }
+
+      return id
+    },
+    [],
+  )
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id))
   }, [])
 
-  return { toasts, toast, removeToast }
+  const removeAllToasts = useCallback(() => {
+    setToasts([])
+  }, [])
+
+  return {
+    toasts,
+    toast,
+    removeToast,
+    removeAllToasts,
+  }
 }

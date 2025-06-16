@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -10,115 +12,215 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { ImageUpload } from "@/components/ui/image-upload"
 import { useToast } from "@/lib/hooks/use-toast"
 import { ToastContainer } from "@/components/ui/toast"
-import { Mail, Shield, Phone, User } from "lucide-react"
+import { Mail, Shield, Phone, User, Camera, CheckCircle, AlertCircle } from "lucide-react"
 import { NIGERIAN_STATES } from "@/lib/constants"
 import { getCurrentUser } from "@/lib/auth"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
+import { useRealtimeData } from "@/lib/hooks/use-realtime-data"
+import Image from "next/image"
+
+interface ProfileData {
+  id?: string
+  name: string
+  email: string
+  phone: string
+  location: string
+  bio: string
+  farm_size: string
+  farming_experience: string
+  specialization: string
+  certifications: string
+  bank_account: string
+  bank_name: string
+  avatar_url: string
+  kyc_status: "pending" | "approved" | "rejected"
+}
 
 export default function FarmerProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [user, setUser] = useState<any>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
-  const { toasts, toast, removeToast } = useToast()
-  const router = useRouter()
-
-  const [profileData, setProfileData] = useState({
+  const [profileData, setProfileData] = useState<ProfileData>({
     name: "",
     email: "",
     phone: "",
     location: "",
     bio: "",
-    farmSize: "",
-    farmingExperience: "",
+    farm_size: "",
+    farming_experience: "",
     specialization: "",
     certifications: "",
-    bankAccount: "",
-    bankName: "",
+    bank_account: "",
+    bank_name: "",
     avatar_url: "",
+    kyc_status: "pending",
   })
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const { toasts, toast, removeToast } = useToast()
+  const router = useRouter()
 
-  const [kycStatus] = useState<"pending" | "approved" | "rejected">("approved")
+  // Real-time user data
+  const { data: userData, loading: userLoading } = useRealtimeData<any>({
+    table: "users",
+    filter: user?.id ? { id: user.id } : undefined,
+    enabled: !!user?.id,
+  })
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        setIsLoading(true)
         const { user } = await getCurrentUser()
         if (!user) {
           router.push("/login")
           return
         }
         setUser(user)
-        await loadProfile(user.id)
-        setIsInitialized(true)
       } catch (err) {
         console.error("Auth error:", err)
         router.push("/login")
-      } finally {
-        setIsLoading(false)
       }
     }
     checkAuth()
   }, [router])
 
-  const loadProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
-
-      if (error && error.code !== "PGRST116") {
-        throw error
-      }
-
-      if (data) {
-        setProfileData({
-          name: data.name || "",
-          email: data.email || "",
-          phone: data.phone || "",
-          location: data.location || "",
-          bio: data.bio || "",
-          farmSize: data.farm_size || "",
-          farmingExperience: data.farming_experience || "",
-          specialization: data.specialization || "",
-          certifications: data.certifications || "",
-          bankAccount: data.bank_account || "",
-          bankName: data.bank_name || "",
-          avatar_url: data.avatar_url || "",
-        })
-      }
-    } catch (error: any) {
-      console.error("Error loading profile:", error)
-      toast({
-        title: "Error Loading Profile",
-        description: "Using default values. You can update your profile below.",
-        type: "info",
+  // Update profile data when user data changes
+  useEffect(() => {
+    if (userData && userData.length > 0) {
+      const userProfile = userData[0]
+      setProfileData({
+        id: userProfile.id,
+        name: userProfile.name || "",
+        email: userProfile.email || "",
+        phone: userProfile.phone || "",
+        location: userProfile.location || "",
+        bio: userProfile.bio || "",
+        farm_size: userProfile.farm_size || "",
+        farming_experience: userProfile.farming_experience || "",
+        specialization: userProfile.specialization || "",
+        certifications: userProfile.certifications || "",
+        bank_account: userProfile.bank_account || "",
+        bank_name: userProfile.bank_name || "",
+        avatar_url: userProfile.avatar_url || "",
+        kyc_status: userProfile.kyc_status || "pending",
       })
+    }
+  }, [userData])
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {}
+
+    if (!profileData.name.trim()) {
+      newErrors.name = "Name is required"
+    }
+    if (!profileData.email.trim()) {
+      newErrors.email = "Email is required"
+    } else if (!/\S+@\S+\.\S+/.test(profileData.email)) {
+      newErrors.email = "Email is invalid"
+    }
+    if (profileData.phone && !/^\+?[\d\s-()]+$/.test(profileData.phone)) {
+      newErrors.phone = "Phone number is invalid"
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !user?.id) return
+
+    // Validate file
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please select an image file.",
+        type: "error",
+      })
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Please select an image smaller than 5MB.",
+        type: "error",
+      })
+      return
+    }
+
+    setIsUploadingImage(true)
+
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split(".").pop()
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`
+      const filePath = `avatars/${fileName}`
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+      })
+
+      if (uploadError) throw uploadError
+
+      // Get public URL
+      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath)
+
+      // Update profile data
+      const newProfileData = { ...profileData, avatar_url: urlData.publicUrl }
+      setProfileData(newProfileData)
+
+      // Save to database immediately
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          avatar_url: urlData.publicUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id)
+
+      if (updateError) throw updateError
+
+      toast({
+        title: "Profile Photo Updated",
+        description: "Your profile photo has been successfully updated.",
+        type: "success",
+      })
+    } catch (error: any) {
+      console.error("Image upload error:", error)
+      toast({
+        title: "Upload Failed",
+        description: error.message || "Failed to upload image. Please try again.",
+        type: "error",
+      })
+    } finally {
+      setIsUploadingImage(false)
     }
   }
 
   const handleSave = async () => {
-    if (!user?.id) return
+    if (!user?.id || !validateForm()) return
 
     setIsSaving(true)
     try {
       const { error } = await supabase.from("users").upsert({
         id: user.id,
-        name: profileData.name,
-        email: profileData.email,
-        phone: profileData.phone,
+        name: profileData.name.trim(),
+        email: profileData.email.trim(),
+        phone: profileData.phone.trim(),
         location: profileData.location,
-        bio: profileData.bio,
-        farm_size: profileData.farmSize,
-        farming_experience: profileData.farmingExperience,
-        specialization: profileData.specialization,
-        certifications: profileData.certifications,
-        bank_account: profileData.bankAccount,
-        bank_name: profileData.bankName,
+        bio: profileData.bio.trim(),
+        farm_size: profileData.farm_size.trim(),
+        farming_experience: profileData.farming_experience.trim(),
+        specialization: profileData.specialization.trim(),
+        certifications: profileData.certifications.trim(),
+        bank_account: profileData.bank_account.trim(),
+        bank_name: profileData.bank_name.trim(),
         avatar_url: profileData.avatar_url,
         role: "farmer",
         updated_at: new Date().toISOString(),
@@ -127,13 +229,14 @@ export default function FarmerProfilePage() {
       if (error) throw error
 
       setIsEditing(false)
+      setErrors({})
       toast({
         title: "Profile Updated",
         description: "Your profile has been successfully updated.",
         type: "success",
       })
     } catch (error: any) {
-      console.error("Failed to update profile:", error)
+      console.error("Profile update error:", error)
       toast({
         title: "Update Failed",
         description: error.message || "Failed to update profile. Please try again.",
@@ -141,30 +244,6 @@ export default function FarmerProfilePage() {
       })
     } finally {
       setIsSaving(false)
-    }
-  }
-
-  const handleImageUpload = async (url: string) => {
-    setProfileData((prev) => ({ ...prev, avatar_url: url }))
-
-    // Auto-save avatar
-    if (user?.id) {
-      try {
-        const { error } = await supabase.from("users").upsert({
-          id: user.id,
-          avatar_url: url,
-          updated_at: new Date().toISOString(),
-        })
-
-        if (error) throw error
-      } catch (error: any) {
-        console.error("Failed to save avatar:", error)
-        toast({
-          title: "Avatar Save Failed",
-          description: "Avatar uploaded but failed to save to profile.",
-          type: "warning",
-        })
-      }
     }
   }
 
@@ -181,7 +260,24 @@ export default function FarmerProfilePage() {
     }
   }
 
-  if (isLoading || !isInitialized) {
+  const getProfileCompletion = () => {
+    const fields = [
+      profileData.name,
+      profileData.email,
+      profileData.phone,
+      profileData.location,
+      profileData.bio,
+      profileData.farm_size,
+      profileData.farming_experience,
+      profileData.specialization,
+      profileData.bank_account,
+      profileData.bank_name,
+    ]
+    const completedFields = fields.filter(Boolean).length
+    return Math.round((completedFields / fields.length) * 100)
+  }
+
+  if (userLoading || !user) {
     return (
       <div className="flex min-h-screen bg-gray-50">
         <CollapsibleSidebar userRole="farmer" />
@@ -228,19 +324,45 @@ export default function FarmerProfilePage() {
                 <CardContent className="space-y-6">
                   {/* Profile Picture */}
                   <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
-                    <ImageUpload
-                      currentImage={profileData.avatar_url}
-                      onUploadComplete={handleImageUpload}
-                      bucket="avatars"
-                      path="farmers"
-                      size="lg"
-                      shape="circle"
-                    />
+                    <div className="relative">
+                      <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 border-2 border-gray-200">
+                        {profileData.avatar_url ? (
+                          <Image
+                            src={profileData.avatar_url || "/placeholder.svg"}
+                            alt="Profile"
+                            width={96}
+                            height={96}
+                            className="w-full h-full object-cover"
+                            onError={() => {
+                              setProfileData((prev) => ({ ...prev, avatar_url: "" }))
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                            <User className="w-8 h-8 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+                      <label
+                        htmlFor="avatar-upload"
+                        className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white hover:bg-green-700 cursor-pointer transition-colors"
+                      >
+                        {isUploadingImage ? <LoadingSpinner size="sm" /> : <Camera className="w-4 h-4" />}
+                      </label>
+                      <input
+                        id="avatar-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                        disabled={isUploadingImage}
+                      />
+                    </div>
                     <div className="text-center sm:text-left">
                       <h3 className="text-lg font-semibold text-gray-900">{profileData.name || "Farmer"}</h3>
                       <p className="text-gray-600">Farmer</p>
-                      <Badge className={getKycStatusColor(kycStatus)} variant="secondary">
-                        KYC {kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}
+                      <Badge className={getKycStatusColor(profileData.kyc_status)} variant="secondary">
+                        KYC {profileData.kyc_status.charAt(0).toUpperCase() + profileData.kyc_status.slice(1)}
                       </Badge>
                     </div>
                   </div>
@@ -254,9 +376,15 @@ export default function FarmerProfilePage() {
                         value={profileData.name}
                         onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                         disabled={!isEditing}
-                        className="mt-1"
+                        className={`mt-1 ${errors.name ? "border-red-500" : ""}`}
                         placeholder="Enter your full name"
                       />
+                      {errors.name && (
+                        <p className="text-red-500 text-sm mt-1 flex items-center">
+                          <AlertCircle className="w-4 h-4 mr-1" />
+                          {errors.name}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="email">Email Address *</Label>
@@ -266,9 +394,15 @@ export default function FarmerProfilePage() {
                         value={profileData.email}
                         onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                         disabled={!isEditing}
-                        className="mt-1"
+                        className={`mt-1 ${errors.email ? "border-red-500" : ""}`}
                         placeholder="Enter your email"
                       />
+                      {errors.email && (
+                        <p className="text-red-500 text-sm mt-1 flex items-center">
+                          <AlertCircle className="w-4 h-4 mr-1" />
+                          {errors.email}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="phone">Phone Number</Label>
@@ -277,9 +411,15 @@ export default function FarmerProfilePage() {
                         value={profileData.phone}
                         onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                         disabled={!isEditing}
-                        className="mt-1"
+                        className={`mt-1 ${errors.phone ? "border-red-500" : ""}`}
                         placeholder="+234 xxx xxx xxxx"
                       />
+                      {errors.phone && (
+                        <p className="text-red-500 text-sm mt-1 flex items-center">
+                          <AlertCircle className="w-4 h-4 mr-1" />
+                          {errors.phone}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="location">State</Label>
@@ -316,7 +456,7 @@ export default function FarmerProfilePage() {
                   </div>
 
                   {isEditing && (
-                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 pt-4 border-t">
                       <Button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
                         {isSaving ? (
                           <>
@@ -324,7 +464,10 @@ export default function FarmerProfilePage() {
                             Saving...
                           </>
                         ) : (
-                          "Save Changes"
+                          <>
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Save Changes
+                          </>
                         )}
                       </Button>
                       <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isSaving}>
@@ -347,8 +490,8 @@ export default function FarmerProfilePage() {
                       <Label htmlFor="farmSize">Farm Size</Label>
                       <Input
                         id="farmSize"
-                        value={profileData.farmSize}
-                        onChange={(e) => setProfileData({ ...profileData, farmSize: e.target.value })}
+                        value={profileData.farm_size}
+                        onChange={(e) => setProfileData({ ...profileData, farm_size: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
                         placeholder="e.g., 25 hectares"
@@ -358,8 +501,8 @@ export default function FarmerProfilePage() {
                       <Label htmlFor="experience">Years of Experience</Label>
                       <Input
                         id="experience"
-                        value={profileData.farmingExperience}
-                        onChange={(e) => setProfileData({ ...profileData, farmingExperience: e.target.value })}
+                        value={profileData.farming_experience}
+                        onChange={(e) => setProfileData({ ...profileData, farming_experience: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
                         placeholder="e.g., 15 years"
@@ -406,8 +549,8 @@ export default function FarmerProfilePage() {
                       <Label htmlFor="bankName">Bank Name</Label>
                       <Input
                         id="bankName"
-                        value={profileData.bankName}
-                        onChange={(e) => setProfileData({ ...profileData, bankName: e.target.value })}
+                        value={profileData.bank_name}
+                        onChange={(e) => setProfileData({ ...profileData, bank_name: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
                         placeholder="e.g., First Bank Nigeria"
@@ -417,8 +560,8 @@ export default function FarmerProfilePage() {
                       <Label htmlFor="bankAccount">Account Number</Label>
                       <Input
                         id="bankAccount"
-                        value={profileData.bankAccount}
-                        onChange={(e) => setProfileData({ ...profileData, bankAccount: e.target.value })}
+                        value={profileData.bank_account}
+                        onChange={(e) => setProfileData({ ...profileData, bank_account: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
                         placeholder="0123456789"
@@ -460,8 +603,8 @@ export default function FarmerProfilePage() {
                       <Shield className="w-4 h-4 text-gray-500" />
                       <span className="text-sm">KYC Status</span>
                     </div>
-                    <Badge className={getKycStatusColor(kycStatus)} variant="secondary">
-                      {kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}
+                    <Badge className={getKycStatusColor(profileData.kyc_status)} variant="secondary">
+                      {profileData.kyc_status.charAt(0).toUpperCase() + profileData.kyc_status.slice(1)}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
@@ -474,21 +617,36 @@ export default function FarmerProfilePage() {
                 </CardContent>
               </Card>
 
+              {/* Profile Completion */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Profile Completion</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Progress</span>
+                      <span className="text-sm font-semibold">{getProfileCompletion()}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${getProfileCompletion()}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Complete your profile to attract more investors and increase your credibility.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Quick Stats */}
               <Card>
                 <CardHeader>
                   <CardTitle>Profile Statistics</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Profile Completion</span>
-                    <span className="font-semibold text-green-600">
-                      {Math.round(
-                        (Object.values(profileData).filter(Boolean).length / Object.values(profileData).length) * 100,
-                      )}
-                      %
-                    </span>
-                  </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Projects Created</span>
                     <span className="font-semibold">0</span>
