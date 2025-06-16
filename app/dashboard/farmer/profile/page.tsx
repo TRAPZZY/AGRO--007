@@ -10,69 +10,161 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { ImageUpload } from "@/components/ui/image-upload"
 import { useToast } from "@/lib/hooks/use-toast"
 import { ToastContainer } from "@/components/ui/toast"
-import { Upload, User, Mail, Shield, Camera, Phone } from "lucide-react"
+import { Mail, Shield, Phone, User } from "lucide-react"
 import { NIGERIAN_STATES } from "@/lib/constants"
 import { getCurrentUser } from "@/lib/auth"
 import { useRouter } from "next/navigation"
-import Image from "next/image"
+import { supabase } from "@/lib/supabase/client"
 
 export default function FarmerProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
   const { toasts, toast, removeToast } = useToast()
   const router = useRouter()
 
   const [profileData, setProfileData] = useState({
-    name: "John Adebayo",
-    email: "john.adebayo@example.com",
-    phone: "+234 801 234 5678",
-    location: "Oyo State",
-    bio: "Experienced farmer with over 15 years in sustainable agriculture. Specializing in crop rotation, organic farming methods, and modern irrigation systems.",
-    farmSize: "25 hectares",
-    farmingExperience: "15 years",
-    specialization: "Crops & Grains",
-    certifications: "Organic Farming Certificate, Agricultural Extension Certificate",
-    bankAccount: "0123456789",
-    bankName: "First Bank Nigeria",
-    avatar_url: "/placeholder.svg?height=150&width=150",
+    name: "",
+    email: "",
+    phone: "",
+    location: "",
+    bio: "",
+    farmSize: "",
+    farmingExperience: "",
+    specialization: "",
+    certifications: "",
+    bankAccount: "",
+    bankName: "",
+    avatar_url: "",
   })
 
   const [kycStatus] = useState<"pending" | "approved" | "rejected">("approved")
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user } = await getCurrentUser()
-      if (!user) {
+      try {
+        setIsLoading(true)
+        const { user } = await getCurrentUser()
+        if (!user) {
+          router.push("/login")
+          return
+        }
+        setUser(user)
+        await loadProfile(user.id)
+        setIsInitialized(true)
+      } catch (err) {
+        console.error("Auth error:", err)
         router.push("/login")
-        return
+      } finally {
+        setIsLoading(false)
       }
-      setUser(user)
     }
     checkAuth()
   }, [router])
 
-  const handleSave = async () => {
-    setIsLoading(true)
+  const loadProfile = async (userId: string) => {
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
+
+      if (error && error.code !== "PGRST116") {
+        throw error
+      }
+
+      if (data) {
+        setProfileData({
+          name: data.name || "",
+          email: data.email || "",
+          phone: data.phone || "",
+          location: data.location || "",
+          bio: data.bio || "",
+          farmSize: data.farm_size || "",
+          farmingExperience: data.farming_experience || "",
+          specialization: data.specialization || "",
+          certifications: data.certifications || "",
+          bankAccount: data.bank_account || "",
+          bankName: data.bank_name || "",
+          avatar_url: data.avatar_url || "",
+        })
+      }
+    } catch (error: any) {
+      console.error("Error loading profile:", error)
+      toast({
+        title: "Error Loading Profile",
+        description: "Using default values. You can update your profile below.",
+        type: "info",
+      })
+    }
+  }
+
+  const handleSave = async () => {
+    if (!user?.id) return
+
+    setIsSaving(true)
+    try {
+      const { error } = await supabase.from("users").upsert({
+        id: user.id,
+        name: profileData.name,
+        email: profileData.email,
+        phone: profileData.phone,
+        location: profileData.location,
+        bio: profileData.bio,
+        farm_size: profileData.farmSize,
+        farming_experience: profileData.farmingExperience,
+        specialization: profileData.specialization,
+        certifications: profileData.certifications,
+        bank_account: profileData.bankAccount,
+        bank_name: profileData.bankName,
+        avatar_url: profileData.avatar_url,
+        role: "farmer",
+        updated_at: new Date().toISOString(),
+      })
+
+      if (error) throw error
+
       setIsEditing(false)
       toast({
         title: "Profile Updated",
         description: "Your profile has been successfully updated.",
         type: "success",
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to update profile:", error)
       toast({
         title: "Update Failed",
-        description: "Failed to update profile. Please try again.",
+        description: error.message || "Failed to update profile. Please try again.",
         type: "error",
       })
     } finally {
-      setIsLoading(false)
+      setIsSaving(false)
+    }
+  }
+
+  const handleImageUpload = async (url: string) => {
+    setProfileData((prev) => ({ ...prev, avatar_url: url }))
+
+    // Auto-save avatar
+    if (user?.id) {
+      try {
+        const { error } = await supabase.from("users").upsert({
+          id: user.id,
+          avatar_url: url,
+          updated_at: new Date().toISOString(),
+        })
+
+        if (error) throw error
+      } catch (error: any) {
+        console.error("Failed to save avatar:", error)
+        toast({
+          title: "Avatar Save Failed",
+          description: "Avatar uploaded but failed to save to profile.",
+          type: "warning",
+        })
+      }
     }
   }
 
@@ -89,12 +181,15 @@ export default function FarmerProfilePage() {
     }
   }
 
-  if (!user) {
+  if (isLoading || !isInitialized) {
     return (
       <div className="flex min-h-screen bg-gray-50">
         <CollapsibleSidebar userRole="farmer" />
         <div className="flex-1 flex items-center justify-center">
-          <LoadingSpinner size="lg" />
+          <div className="text-center">
+            <LoadingSpinner size="lg" />
+            <p className="mt-4 text-gray-600">Loading your profile...</p>
+          </div>
         </div>
       </div>
     )
@@ -133,24 +228,16 @@ export default function FarmerProfilePage() {
                 <CardContent className="space-y-6">
                   {/* Profile Picture */}
                   <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
-                    <div className="relative">
-                      <div className="w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden bg-gray-100">
-                        <Image
-                          src={profileData.avatar_url || "/placeholder.svg"}
-                          alt="Profile"
-                          width={96}
-                          height={96}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      {isEditing && (
-                        <button className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white hover:bg-green-700">
-                          <Camera className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                    <ImageUpload
+                      currentImage={profileData.avatar_url}
+                      onUploadComplete={handleImageUpload}
+                      bucket="avatars"
+                      path="farmers"
+                      size="lg"
+                      shape="circle"
+                    />
                     <div className="text-center sm:text-left">
-                      <h3 className="text-lg font-semibold text-gray-900">{profileData.name}</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">{profileData.name || "Farmer"}</h3>
                       <p className="text-gray-600">Farmer</p>
                       <Badge className={getKycStatusColor(kycStatus)} variant="secondary">
                         KYC {kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}
@@ -161,17 +248,18 @@ export default function FarmerProfilePage() {
                   {/* Form Fields */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div>
-                      <Label htmlFor="name">Full Name</Label>
+                      <Label htmlFor="name">Full Name *</Label>
                       <Input
                         id="name"
                         value={profileData.name}
                         onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
+                        placeholder="Enter your full name"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="email">Email Address</Label>
+                      <Label htmlFor="email">Email Address *</Label>
                       <Input
                         id="email"
                         type="email"
@@ -179,6 +267,7 @@ export default function FarmerProfilePage() {
                         onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
+                        placeholder="Enter your email"
                       />
                     </div>
                     <div>
@@ -189,6 +278,7 @@ export default function FarmerProfilePage() {
                         onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
+                        placeholder="+234 xxx xxx xxxx"
                       />
                     </div>
                     <div>
@@ -227,8 +317,8 @@ export default function FarmerProfilePage() {
 
                   {isEditing && (
                     <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
-                      <Button onClick={handleSave} disabled={isLoading} className="bg-green-600 hover:bg-green-700">
-                        {isLoading ? (
+                      <Button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
+                        {isSaving ? (
                           <>
                             <LoadingSpinner size="sm" className="mr-2" />
                             Saving...
@@ -237,7 +327,7 @@ export default function FarmerProfilePage() {
                           "Save Changes"
                         )}
                       </Button>
-                      <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isLoading}>
+                      <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isSaving}>
                         Cancel
                       </Button>
                     </div>
@@ -320,6 +410,7 @@ export default function FarmerProfilePage() {
                         onChange={(e) => setProfileData({ ...profileData, bankName: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
+                        placeholder="e.g., First Bank Nigeria"
                       />
                     </div>
                     <div>
@@ -330,6 +421,7 @@ export default function FarmerProfilePage() {
                         onChange={(e) => setProfileData({ ...profileData, bankAccount: e.target.value })}
                         disabled={!isEditing}
                         className="mt-1"
+                        placeholder="0123456789"
                       />
                     </div>
                   </div>
@@ -382,61 +474,34 @@ export default function FarmerProfilePage() {
                 </CardContent>
               </Card>
 
-              {/* Statistics */}
+              {/* Quick Stats */}
               <Card>
                 <CardHeader>
                   <CardTitle>Profile Statistics</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Profile Completion</span>
+                    <span className="font-semibold text-green-600">
+                      {Math.round(
+                        (Object.values(profileData).filter(Boolean).length / Object.values(profileData).length) * 100,
+                      )}
+                      %
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Projects Created</span>
-                    <span className="font-semibold">8</span>
+                    <span className="font-semibold">0</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Total Funds Raised</span>
-                    <span className="font-semibold text-green-600">₦2.4M</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Success Rate</span>
-                    <span className="font-semibold">94%</span>
+                    <span className="font-semibold text-green-600">₦0</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Member Since</span>
-                    <span className="font-semibold">Jan 2023</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* KYC Documents */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>KYC Documents</CardTitle>
-                  <CardDescription>Upload required documents for verification</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-medium">Government ID</Label>
-                    <div className="mt-2 border-2 border-dashed border-green-300 rounded-lg p-4 text-center hover:border-green-400 transition-colors">
-                      <Upload className="w-6 h-6 text-green-500 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600">Upload ID card or passport</p>
-                      <Badge className="mt-2 bg-green-100 text-green-800">Approved</Badge>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium">Proof of Address</Label>
-                    <div className="mt-2 border-2 border-dashed border-green-300 rounded-lg p-4 text-center hover:border-green-400 transition-colors">
-                      <Upload className="w-6 h-6 text-green-500 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600">Upload utility bill</p>
-                      <Badge className="mt-2 bg-green-100 text-green-800">Approved</Badge>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium">Farm Documentation</Label>
-                    <div className="mt-2 border-2 border-dashed border-green-300 rounded-lg p-4 text-center hover:border-green-400 transition-colors">
-                      <Upload className="w-6 h-6 text-green-500 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600">Upload farm ownership docs</p>
-                      <Badge className="mt-2 bg-green-100 text-green-800">Approved</Badge>
-                    </div>
+                    <span className="font-semibold">
+                      {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                    </span>
                   </div>
                 </CardContent>
               </Card>

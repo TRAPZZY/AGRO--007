@@ -7,50 +7,13 @@ import { InvestmentModal } from "@/components/investment-modal"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/lib/hooks/use-toast"
 import { ToastContainer } from "@/components/ui/toast"
+import { useRealtime } from "@/lib/hooks/use-realtime"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { getCurrentUser } from "@/lib/auth"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
-
-// Mock data fallback
-const mockProjects = [
-  {
-    id: "1",
-    title: "Organic Rice Farming - Kebbi State",
-    description:
-      "Sustainable rice farming using organic methods to produce high-quality rice for local and export markets.",
-    image_url: "/placeholder.svg?height=200&width=300",
-    funding_goal: 500000,
-    amount_raised: 350000,
-    category: "crops",
-    location: "Kebbi State",
-    status: "active",
-    farmer_id: "farmer1",
-    users: { name: "Aminu Hassan" },
-    expected_return: 18,
-    risk_level: "low",
-    created_at: "2024-01-01",
-    updated_at: "2024-01-15",
-  },
-  {
-    id: "2",
-    title: "Modern Poultry Farm Setup",
-    description: "Establishing a modern poultry farm with automated feeding systems and climate control.",
-    image_url: "/placeholder.svg?height=200&width=300",
-    funding_goal: 800000,
-    amount_raised: 200000,
-    category: "poultry",
-    location: "Ogun State",
-    status: "active",
-    farmer_id: "farmer2",
-    users: { name: "Grace Okonkwo" },
-    expected_return: 20,
-    risk_level: "medium",
-    created_at: "2024-01-20",
-    updated_at: "2024-02-01",
-  },
-]
+import { Search, Filter } from "lucide-react"
 
 export default function BrowseProjectsPage() {
   const [selectedProject, setSelectedProject] = useState<any>(null)
@@ -58,11 +21,12 @@ export default function BrowseProjectsPage() {
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [user, setUser] = useState<any>(null)
-  const [projects, setProjects] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
   const { toasts, toast, removeToast } = useToast()
   const router = useRouter()
+
+  // Real-time projects data
+  const { data: projects, loading, error } = useRealtime("projects", [])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -73,6 +37,7 @@ export default function BrowseProjectsPage() {
           return
         }
         setUser(user)
+        setIsInitialized(true)
       } catch (err) {
         console.error("Auth error:", err)
         router.push("/login")
@@ -80,55 +45,6 @@ export default function BrowseProjectsPage() {
     }
     checkAuth()
   }, [router])
-
-  useEffect(() => {
-    const fetchProjects = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-
-        const supabase = createClient()
-        const { data, error: fetchError } = await supabase
-          .from("projects")
-          .select(`
-            *,
-            users!projects_farmer_id_fkey (
-              id,
-              name,
-              email
-            )
-          `)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-
-        if (fetchError) {
-          console.error("Supabase error:", fetchError)
-          // Use mock data as fallback
-          setProjects(mockProjects)
-          toast({
-            title: "Using Demo Data",
-            description: "Connected to demo projects for testing",
-            type: "info",
-          })
-        } else {
-          setProjects(data || [])
-        }
-      } catch (err) {
-        console.error("Fetch error:", err)
-        // Use mock data as fallback
-        setProjects(mockProjects)
-        toast({
-          title: "Using Demo Data",
-          description: "Connected to demo projects for testing",
-          type: "info",
-        })
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchProjects()
-  }, [toast])
 
   const handleInvest = (projectId: string) => {
     if (!user) {
@@ -140,28 +56,40 @@ export default function BrowseProjectsPage() {
       return
     }
 
-    const project = projects.find((p) => p.id === projectId)
+    const project = projects.find((p: any) => p.id === projectId)
+    if (!project) {
+      toast({
+        title: "Project Not Found",
+        description: "The selected project could not be found.",
+        type: "error",
+      })
+      return
+    }
+
     setSelectedProject(project)
     setIsModalOpen(true)
   }
 
-  const filteredProjects = projects.filter((project) => {
+  const filteredProjects = projects.filter((project: any) => {
     const matchesCategory = categoryFilter === "all" || project.category === categoryFilter
     const matchesSearch =
-      project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (project.users?.name || "").toLowerCase().includes(searchTerm.toLowerCase())
+      project.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.description?.toLowerCase().includes(searchTerm.toLowerCase())
     const isActive = project.status === "active"
-    return matchesCategory && matchesSearch && isActive
+    const hasRemainingFunding = (project.amount_raised || 0) < (project.funding_goal || 0)
+
+    return matchesCategory && matchesSearch && isActive && hasRemainingFunding
   })
 
-  if (loading) {
+  if (loading || !isInitialized) {
     return (
       <div className="flex min-h-screen bg-gray-50">
         <CollapsibleSidebar userRole="investor" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <LoadingSpinner size="lg" />
-            <p className="mt-4 text-gray-600">Loading projects...</p>
+            <p className="mt-4 text-gray-600">Loading investment opportunities...</p>
           </div>
         </div>
       </div>
@@ -177,53 +105,107 @@ export default function BrowseProjectsPage() {
           <div className="mb-8">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Browse Projects</h1>
             <p className="text-gray-600">Discover agricultural projects to invest in</p>
+
+            {/* Stats */}
+            <div className="flex flex-wrap gap-4 mt-4">
+              <Badge variant="outline" className="px-3 py-1">
+                {filteredProjects.length} Available Projects
+              </Badge>
+              <Badge variant="outline" className="px-3 py-1">
+                ₦
+                {filteredProjects
+                  .reduce((sum, p) => sum + ((p.funding_goal || 0) - (p.amount_raised || 0)), 0)
+                  .toLocaleString()}{" "}
+                Total Funding Needed
+              </Badge>
+            </div>
           </div>
 
           {/* Filters */}
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-8">
-            <div className="flex-1">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
-                placeholder="Search projects or farmers..."
+                placeholder="Search projects, locations, or farmers..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
               />
             </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full sm:w-48">
-                <SelectValue placeholder="Filter by category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="crops">Crops</SelectItem>
-                <SelectItem value="poultry">Poultry</SelectItem>
-                <SelectItem value="livestock">Livestock</SelectItem>
-                <SelectItem value="processing">Processing</SelectItem>
-                <SelectItem value="equipment">Equipment</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center space-x-2">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="Filter by category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  <SelectItem value="crops">Crops</SelectItem>
+                  <SelectItem value="poultry">Poultry</SelectItem>
+                  <SelectItem value="livestock">Livestock</SelectItem>
+                  <SelectItem value="processing">Processing</SelectItem>
+                  <SelectItem value="equipment">Equipment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Projects Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {filteredProjects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                {...project}
-                farmerName={project.users?.name || "Unknown Farmer"}
-                onInvest={handleInvest}
-              />
-            ))}
-          </div>
-
-          {filteredProjects.length === 0 && !loading && (
+          {/* Error State */}
+          {error && (
             <div className="text-center py-12">
-              <p className="text-gray-500">No projects found matching your criteria.</p>
+              <p className="text-red-500 mb-4">Error loading projects: {error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="text-green-600 hover:text-green-700 underline"
+              >
+                Try again
+              </button>
             </div>
           )}
 
-          {error && (
+          {/* Projects Grid */}
+          {filteredProjects.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+              {filteredProjects.map((project: any) => (
+                <ProjectCard
+                  key={project.id}
+                  id={project.id}
+                  title={project.title}
+                  description={project.description}
+                  image_url={project.image_url}
+                  funding_goal={project.funding_goal}
+                  amount_raised={project.amount_raised}
+                  category={project.category}
+                  location={project.location}
+                  expected_return={project.expected_return}
+                  risk_level={project.risk_level}
+                  farmerName="Farmer" // This would come from a join in real implementation
+                  onInvest={handleInvest}
+                />
+              ))}
+            </div>
+          ) : (
             <div className="text-center py-12">
-              <p className="text-red-500">Error loading projects: {error}</p>
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Search className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No projects found</h3>
+              <p className="text-gray-500 mb-4">
+                {searchTerm || categoryFilter !== "all"
+                  ? "Try adjusting your search or filters"
+                  : "No investment opportunities available at the moment"}
+              </p>
+              {(searchTerm || categoryFilter !== "all") && (
+                <button
+                  onClick={() => {
+                    setSearchTerm("")
+                    setCategoryFilter("all")
+                  }}
+                  className="text-green-600 hover:text-green-700 underline"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           )}
         </div>
