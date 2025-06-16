@@ -11,7 +11,7 @@ import { DollarSign, TrendingUp, PieChart, Target } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 
 export default function InvestorDashboard() {
   const [user, setUser] = useState<any>(null)
@@ -51,7 +51,6 @@ export default function InvestorDashboard() {
     if (!investorId) return
 
     try {
-      const supabase = createClient()
       const { data: investments, error } = await supabase
         .from("investments")
         .select(`
@@ -99,7 +98,6 @@ export default function InvestorDashboard() {
   useEffect(() => {
     if (!user?.id || !isInitialized) return
 
-    const supabase = createClient()
     const subscription = supabase
       .channel("investor_dashboard")
       .on(
