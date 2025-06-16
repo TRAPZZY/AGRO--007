@@ -8,34 +8,57 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
-import { AuthGuard } from "@/components/auth-guard"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Bell, Shield, TrendingUp } from "lucide-react"
-import { getCurrentUser } from "@/lib/auth"
-import { supabase } from "@/lib/supabase/client"
+import { Bell, Shield, User, Globe, Smartphone, Mail, Lock, Eye, EyeOff, TrendingUp } from "lucide-react"
 
 export default function InvestorSettingsPage() {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const [settings, setSettings] = useState({
+    // Profile Settings
+    name: "",
+    email: "",
+    phone: "",
+    location: "",
+    occupation: "",
+    investmentExperience: "",
+
+    // Investment Preferences
+    riskTolerance: "medium",
+    maxInvestmentAmount: 1000000,
+    minInvestmentAmount: 10000,
+    preferredCategories: [] as string[],
+    autoInvest: false,
+
+    // Notification Settings
     emailNotifications: true,
     smsNotifications: false,
-    marketingEmails: false,
+    pushNotifications: true,
     investmentAlerts: true,
     projectUpdates: true,
     weeklyReports: true,
     monthlyStatements: true,
-    twoFactorAuth: false,
+    marketingEmails: false,
+
+    // Privacy Settings
     profileVisibility: "public",
+    showInvestmentHistory: false,
     dataSharing: false,
-    autoInvest: false,
-    riskTolerance: "medium",
-    maxInvestmentAmount: 1000000,
-    preferredCategories: [] as string[],
+
+    // Security Settings
+    twoFactorAuth: false,
+    loginAlerts: true,
+
+    // App Preferences
+    language: "en",
+    currency: "NGN",
+    timezone: "Africa/Lagos",
+    theme: "light",
   })
 
   const [passwordData, setPasswordData] = useState({
@@ -47,9 +70,14 @@ export default function InvestorSettingsPage() {
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        const { user } = await getCurrentUser()
-        if (user) {
-          setUser(user)
+        const userData = JSON.parse(localStorage.getItem("user") || "{}")
+        if (userData.id) {
+          setUser(userData)
+          setSettings((prev) => ({
+            ...prev,
+            name: userData.name || "",
+            email: userData.email || "",
+          }))
         }
       } catch (error) {
         console.error("Error loading user:", error)
@@ -61,8 +89,27 @@ export default function InvestorSettingsPage() {
     loadUserData()
   }, [])
 
-  const handleSettingChange = (key: string, value: boolean | string | number | string[]) => {
+  const handleSettingChange = (key: string, value: any) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleSaveProfile = async () => {
+    setIsSaving(true)
+    setMessage(null)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      const updatedUser = { ...user, ...settings }
+      localStorage.setItem("user", JSON.stringify(updatedUser))
+      setUser(updatedUser)
+
+      setMessage({ type: "success", text: "Profile updated successfully!" })
+    } catch (error) {
+      setMessage({ type: "error", text: "Failed to update profile. Please try again." })
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleSaveSettings = async () => {
@@ -94,16 +141,11 @@ export default function InvestorSettingsPage() {
     setMessage(null)
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: passwordData.newPassword,
-      })
-
-      if (error) throw error
-
+      await new Promise((resolve) => setTimeout(resolve, 1000))
       setMessage({ type: "success", text: "Password updated successfully!" })
       setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" })
-    } catch (error: any) {
-      setMessage({ type: "error", text: error.message || "Failed to update password." })
+    } catch (error) {
+      setMessage({ type: "error", text: "Failed to update password." })
     } finally {
       setIsSaving(false)
     }
@@ -111,48 +153,130 @@ export default function InvestorSettingsPage() {
 
   if (isLoading) {
     return (
-      <AuthGuard requiredRole="investor">
-        <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-          <CollapsibleSidebar userRole="investor" />
-          <div className="flex-1 flex items-center justify-center">
-            <LoadingSpinner size="lg" />
-          </div>
+      <div className="flex min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
+        <CollapsibleSidebar userRole="investor" userName={user?.name} />
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingSpinner size="lg" />
         </div>
-      </AuthGuard>
+      </div>
     )
   }
 
   return (
-    <AuthGuard requiredRole="investor">
-      <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-        <CollapsibleSidebar userRole="investor" />
+    <div className="flex min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
+      <CollapsibleSidebar userRole="investor" userName={user?.name} />
 
-        <div className="flex-1 overflow-auto">
-          <div className="p-8">
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900">Investment Settings</h1>
-              <p className="text-gray-600 mt-1">Manage your investment preferences and account settings</p>
-            </div>
+      <div className="flex-1 overflow-auto lg:ml-0 ml-0">
+        <div className="p-4 lg:p-8 pt-16 lg:pt-8">
+          <div className="mb-8">
+            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Investment Settings</h1>
+            <p className="text-gray-600 mt-1">Manage your investment preferences and account settings</p>
+          </div>
 
-            {message && (
-              <Alert variant={message.type === "error" ? "destructive" : "default"} className="mb-6">
-                <AlertDescription>{message.text}</AlertDescription>
-              </Alert>
-            )}
+          {message && (
+            <Alert variant={message.type === "error" ? "destructive" : "default"} className="mb-6">
+              <AlertDescription>{message.text}</AlertDescription>
+            </Alert>
+          )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Investment Preferences */}
-              <Card className="agro-card">
-                <CardHeader>
-                  <div className="flex items-center space-x-2">
-                    <TrendingUp className="w-5 h-5 text-green-600" />
-                    <CardTitle>Investment Preferences</CardTitle>
+          <div className="space-y-8">
+            {/* Profile Information */}
+            <Card className="agro-card">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <User className="w-5 h-5 text-green-600" />
+                  <CardTitle>Profile Information</CardTitle>
+                </div>
+                <CardDescription>Update your personal information</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="name">Full Name</Label>
+                    <Input
+                      id="name"
+                      value={settings.name}
+                      onChange={(e) => handleSettingChange("name", e.target.value)}
+                      className="agro-input"
+                    />
                   </div>
-                  <CardDescription>Configure your investment strategy and risk tolerance</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-3">
-                    <Label className="text-base">Risk Tolerance</Label>
+                  <div>
+                    <Label htmlFor="email">Email Address</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={settings.email}
+                      onChange={(e) => handleSettingChange("email", e.target.value)}
+                      className="agro-input"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <Input
+                      id="phone"
+                      value={settings.phone}
+                      onChange={(e) => handleSettingChange("phone", e.target.value)}
+                      className="agro-input"
+                      placeholder="+234 xxx xxx xxxx"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      value={settings.location}
+                      onChange={(e) => handleSettingChange("location", e.target.value)}
+                      className="agro-input"
+                      placeholder="City, State"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="occupation">Occupation</Label>
+                    <Input
+                      id="occupation"
+                      value={settings.occupation}
+                      onChange={(e) => handleSettingChange("occupation", e.target.value)}
+                      className="agro-input"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="investmentExperience">Investment Experience</Label>
+                    <Select
+                      value={settings.investmentExperience}
+                      onValueChange={(value) => handleSettingChange("investmentExperience", value)}
+                    >
+                      <SelectTrigger className="agro-input">
+                        <SelectValue placeholder="Select experience level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="beginner">Beginner (0-2 years)</SelectItem>
+                        <SelectItem value="intermediate">Intermediate (3-5 years)</SelectItem>
+                        <SelectItem value="experienced">Experienced (5+ years)</SelectItem>
+                        <SelectItem value="expert">Expert (10+ years)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button onClick={handleSaveProfile} disabled={isSaving} className="agro-button">
+                  {isSaving ? <LoadingSpinner size="sm" className="mr-2" /> : null}
+                  Update Profile
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Investment Preferences */}
+            <Card className="agro-card">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <TrendingUp className="w-5 h-5 text-green-600" />
+                  <CardTitle>Investment Preferences</CardTitle>
+                </div>
+                <CardDescription>Configure your investment strategy and risk tolerance</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="riskTolerance">Risk Tolerance</Label>
                     <Select
                       value={settings.riskTolerance}
                       onValueChange={(value) => handleSettingChange("riskTolerance", value)}
@@ -167,90 +291,60 @@ export default function InvestorSettingsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-base">Maximum Investment Amount (₦)</Label>
+                  <div>
+                    <Label htmlFor="maxInvestmentAmount">Max Investment Amount (₦)</Label>
                     <Input
+                      id="maxInvestmentAmount"
                       type="number"
                       value={settings.maxInvestmentAmount}
                       onChange={(e) => handleSettingChange("maxInvestmentAmount", Number.parseInt(e.target.value))}
                       className="agro-input"
                       min="1000"
-                      max="50000000"
-                    />
-                    <p className="text-sm text-gray-500">Maximum amount you're willing to invest in a single project</p>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-base">Auto-Investment</Label>
-                      <p className="text-sm text-gray-500">Automatically invest in projects matching your criteria</p>
-                    </div>
-                    <Switch
-                      checked={settings.autoInvest}
-                      onCheckedChange={(checked) => handleSettingChange("autoInvest", checked)}
                     />
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Notification Settings */}
-              <Card className="agro-card">
-                <CardHeader>
-                  <div className="flex items-center space-x-2">
-                    <Bell className="w-5 h-5 text-green-600" />
-                    <CardTitle>Notifications</CardTitle>
-                  </div>
-                  <CardDescription>Choose how you want to be notified about your investments</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-base">Investment Alerts</Label>
-                      <p className="text-sm text-gray-500">Get notified about new investment opportunities</p>
-                    </div>
-                    <Switch
-                      checked={settings.investmentAlerts}
-                      onCheckedChange={(checked) => handleSettingChange("investmentAlerts", checked)}
+                  <div>
+                    <Label htmlFor="minInvestmentAmount">Min Investment Amount (₦)</Label>
+                    <Input
+                      id="minInvestmentAmount"
+                      type="number"
+                      value={settings.minInvestmentAmount}
+                      onChange={(e) => handleSettingChange("minInvestmentAmount", Number.parseInt(e.target.value))}
+                      className="agro-input"
+                      min="1000"
                     />
                   </div>
+                </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-base">Project Updates</Label>
-                      <p className="text-sm text-gray-500">Updates on projects you've invested in</p>
-                    </div>
-                    <Switch
-                      checked={settings.projectUpdates}
-                      onCheckedChange={(checked) => handleSettingChange("projectUpdates", checked)}
-                    />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Auto-Investment</Label>
+                    <p className="text-sm text-gray-500">Automatically invest in projects matching your criteria</p>
                   </div>
+                  <Switch
+                    checked={settings.autoInvest}
+                    onCheckedChange={(checked) => handleSettingChange("autoInvest", checked)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
+            {/* Notification Settings */}
+            <Card className="agro-card">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Bell className="w-5 h-5 text-green-600" />
+                  <CardTitle>Notifications</CardTitle>
+                </div>
+                <CardDescription>Choose how you want to be notified about your investments</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label className="text-base">Weekly Reports</Label>
-                      <p className="text-sm text-gray-500">Weekly portfolio performance summaries</p>
-                    </div>
-                    <Switch
-                      checked={settings.weeklyReports}
-                      onCheckedChange={(checked) => handleSettingChange("weeklyReports", checked)}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-base">Monthly Statements</Label>
-                      <p className="text-sm text-gray-500">Detailed monthly investment statements</p>
-                    </div>
-                    <Switch
-                      checked={settings.monthlyStatements}
-                      onCheckedChange={(checked) => handleSettingChange("monthlyStatements", checked)}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-base">Email Notifications</Label>
+                      <Label className="text-base flex items-center">
+                        <Mail className="w-4 h-4 mr-2" />
+                        Email Notifications
+                      </Label>
                       <p className="text-sm text-gray-500">Receive notifications via email</p>
                     </div>
                     <Switch
@@ -261,31 +355,97 @@ export default function InvestorSettingsPage() {
 
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label className="text-base">SMS Notifications</Label>
-                      <p className="text-sm text-gray-500">Receive important alerts via SMS</p>
+                      <Label className="text-base flex items-center">
+                        <Smartphone className="w-4 h-4 mr-2" />
+                        SMS Notifications
+                      </Label>
+                      <p className="text-sm text-gray-500">Receive alerts via SMS</p>
                     </div>
                     <Switch
                       checked={settings.smsNotifications}
                       onCheckedChange={(checked) => handleSettingChange("smsNotifications", checked)}
                     />
                   </div>
-                </CardContent>
-              </Card>
 
-              {/* Security Settings */}
-              <Card className="agro-card">
-                <CardHeader>
-                  <div className="flex items-center space-x-2">
-                    <Shield className="w-5 h-5 text-green-600" />
-                    <CardTitle>Security & Privacy</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base">Investment Alerts</Label>
+                      <p className="text-sm text-gray-500">New investment opportunities</p>
+                    </div>
+                    <Switch
+                      checked={settings.investmentAlerts}
+                      onCheckedChange={(checked) => handleSettingChange("investmentAlerts", checked)}
+                    />
                   </div>
-                  <CardDescription>Manage your account security and privacy settings</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base">Project Updates</Label>
+                      <p className="text-sm text-gray-500">Updates on your investments</p>
+                    </div>
+                    <Switch
+                      checked={settings.projectUpdates}
+                      onCheckedChange={(checked) => handleSettingChange("projectUpdates", checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base">Weekly Reports</Label>
+                      <p className="text-sm text-gray-500">Portfolio performance summaries</p>
+                    </div>
+                    <Switch
+                      checked={settings.weeklyReports}
+                      onCheckedChange={(checked) => handleSettingChange("weeklyReports", checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base">Monthly Statements</Label>
+                      <p className="text-sm text-gray-500">Detailed investment statements</p>
+                    </div>
+                    <Switch
+                      checked={settings.monthlyStatements}
+                      onCheckedChange={(checked) => handleSettingChange("monthlyStatements", checked)}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Privacy & Security */}
+            <Card className="agro-card">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Shield className="w-5 h-5 text-green-600" />
+                  <CardTitle>Privacy & Security</CardTitle>
+                </div>
+                <CardDescription>Manage your privacy and security preferences</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-3">
+                  <Label className="text-base">Profile Visibility</Label>
+                  <Select
+                    value={settings.profileVisibility}
+                    onValueChange={(value) => handleSettingChange("profileVisibility", value)}
+                  >
+                    <SelectTrigger className="agro-input">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">Public - Visible to farmers</SelectItem>
+                      <SelectItem value="limited">Limited - Basic info only</SelectItem>
+                      <SelectItem value="private">Private - Hidden from search</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label className="text-base">Two-Factor Authentication</Label>
-                      <p className="text-sm text-gray-500">Add an extra layer of security to your account</p>
+                      <p className="text-sm text-gray-500">Extra security for your account</p>
                     </div>
                     <Switch
                       checked={settings.twoFactorAuth}
@@ -293,104 +453,172 @@ export default function InvestorSettingsPage() {
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <Label className="text-base">Profile Visibility</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="radio"
-                          id="public"
-                          name="visibility"
-                          value="public"
-                          checked={settings.profileVisibility === "public"}
-                          onChange={(e) => handleSettingChange("profileVisibility", e.target.value)}
-                          className="text-green-600"
-                        />
-                        <Label htmlFor="public" className="text-sm">
-                          Public - Visible to farmers and other investors
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="radio"
-                          id="private"
-                          name="visibility"
-                          value="private"
-                          checked={settings.profileVisibility === "private"}
-                          onChange={(e) => handleSettingChange("profileVisibility", e.target.value)}
-                          className="text-green-600"
-                        />
-                        <Label htmlFor="private" className="text-sm">
-                          Private - Only basic information visible
-                        </Label>
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base">Login Alerts</Label>
+                      <p className="text-sm text-gray-500">Get notified of new logins</p>
                     </div>
+                    <Switch
+                      checked={settings.loginAlerts}
+                      onCheckedChange={(checked) => handleSettingChange("loginAlerts", checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base">Show Investment History</Label>
+                      <p className="text-sm text-gray-500">Display investment history publicly</p>
+                    </div>
+                    <Switch
+                      checked={settings.showInvestmentHistory}
+                      onCheckedChange={(checked) => handleSettingChange("showInvestmentHistory", checked)}
+                    />
                   </div>
 
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label className="text-base">Data Sharing</Label>
-                      <p className="text-sm text-gray-500">Allow anonymous data sharing for platform improvement</p>
+                      <p className="text-sm text-gray-500">Anonymous analytics sharing</p>
                     </div>
                     <Switch
                       checked={settings.dataSharing}
                       onCheckedChange={(checked) => handleSettingChange("dataSharing", checked)}
                     />
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
 
-              {/* Password Change */}
-              <Card className="agro-card">
-                <CardHeader>
-                  <CardTitle>Change Password</CardTitle>
-                  <CardDescription>Update your password to keep your account secure</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+            {/* App Preferences */}
+            <Card className="agro-card">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Globe className="w-5 h-5 text-green-600" />
+                  <CardTitle>App Preferences</CardTitle>
+                </div>
+                <CardDescription>Customize your app experience</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="currentPassword">Current Password</Label>
+                    <Label htmlFor="language">Language</Label>
+                    <Select value={settings.language} onValueChange={(value) => handleSettingChange("language", value)}>
+                      <SelectTrigger className="agro-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="ha">Hausa</SelectItem>
+                        <SelectItem value="yo">Yoruba</SelectItem>
+                        <SelectItem value="ig">Igbo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="currency">Currency</Label>
+                    <Select value={settings.currency} onValueChange={(value) => handleSettingChange("currency", value)}>
+                      <SelectTrigger className="agro-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NGN">Nigerian Naira (₦)</SelectItem>
+                        <SelectItem value="USD">US Dollar ($)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="timezone">Timezone</Label>
+                    <Select value={settings.timezone} onValueChange={(value) => handleSettingChange("timezone", value)}>
+                      <SelectTrigger className="agro-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Africa/Lagos">West Africa Time (WAT)</SelectItem>
+                        <SelectItem value="UTC">UTC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="theme">Theme</Label>
+                    <Select value={settings.theme} onValueChange={(value) => handleSettingChange("theme", value)}>
+                      <SelectTrigger className="agro-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="light">Light</SelectItem>
+                        <SelectItem value="dark">Dark</SelectItem>
+                        <SelectItem value="system">System</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Change Password */}
+            <Card className="agro-card">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Lock className="w-5 h-5 text-green-600" />
+                  <CardTitle>Change Password</CardTitle>
+                </div>
+                <CardDescription>Update your password to keep your account secure</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="currentPassword">Current Password</Label>
+                  <div className="relative">
                     <Input
                       id="currentPassword"
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       value={passwordData.currentPassword}
                       onChange={(e) => setPasswordData((prev) => ({ ...prev, currentPassword: e.target.value }))}
-                      className="agro-input"
+                      className="agro-input pr-10"
                     />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                   </div>
-                  <div>
-                    <Label htmlFor="newPassword">New Password</Label>
-                    <Input
-                      id="newPassword"
-                      type="password"
-                      value={passwordData.newPassword}
-                      onChange={(e) => setPasswordData((prev) => ({ ...prev, newPassword: e.target.value }))}
-                      className="agro-input"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                    <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={passwordData.confirmPassword}
-                      onChange={(e) => setPasswordData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                      className="agro-input"
-                    />
-                  </div>
-                  <Button
-                    onClick={handlePasswordChange}
-                    disabled={isSaving || !passwordData.currentPassword || !passwordData.newPassword}
-                    className="agro-button"
-                  >
-                    {isSaving ? <LoadingSpinner size="sm" className="mr-2" /> : null}
-                    Update Password
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+                <div>
+                  <Label htmlFor="newPassword">New Password</Label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={passwordData.newPassword}
+                    onChange={(e) => setPasswordData((prev) => ({ ...prev, newPassword: e.target.value }))}
+                    className="agro-input"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={passwordData.confirmPassword}
+                    onChange={(e) => setPasswordData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                    className="agro-input"
+                  />
+                </div>
+                <Button
+                  onClick={handlePasswordChange}
+                  disabled={isSaving || !passwordData.currentPassword || !passwordData.newPassword}
+                  className="agro-button"
+                >
+                  {isSaving ? <LoadingSpinner size="sm" className="mr-2" /> : null}
+                  Update Password
+                </Button>
+              </CardContent>
+            </Card>
 
-            {/* Save Button */}
-            <div className="mt-8 flex justify-end">
+            {/* Save All Settings */}
+            <div className="flex justify-end">
               <Button onClick={handleSaveSettings} disabled={isSaving} className="agro-button px-8">
                 {isSaving ? <LoadingSpinner size="sm" className="mr-2" /> : null}
                 Save All Settings
@@ -399,6 +627,6 @@ export default function InvestorSettingsPage() {
           </div>
         </div>
       </div>
-    </AuthGuard>
+    </div>
   )
 }

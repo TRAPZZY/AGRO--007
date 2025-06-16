@@ -84,3 +84,41 @@
 .loading-spinner {
   @apply animate-spin rounded-full h-6 w-6 border-b-2 border-green-600;
 }
+
+/* Mobile responsiveness improvements */
+@media (max-width: 768px) {
+  .agro-card {
+    @apply mx-2;
+  }
+
+  .dashboard-grid {
+    @apply grid-cols-1 gap-4;
+  }
+
+  .stats-grid {
+    @apply grid-cols-2 gap-3;
+  }
+}
+
+/* Smooth transitions for sidebar */
+.sidebar-transition {
+  transition: transform 0.3s ease-in-out, width 0.3s ease-in-out;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #10b981;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #059669;
+}
