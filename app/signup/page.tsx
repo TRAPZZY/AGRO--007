@@ -78,23 +78,26 @@ export default function SignupPage() {
     setIsLoading(true)
 
     try {
-      const { data, error, message } = await signUp(formData)
+      console.log("Starting signup process...")
+      const result = await signUp(formData)
 
-      if (error) {
-        setError(error.message || "Failed to create account")
+      if (result.error) {
+        console.error("Signup failed:", result.error)
+        setError(result.error.message || "Failed to create account")
         return
       }
 
-      if (message) {
+      if (result.message) {
         // Email confirmation required
-        setSuccess(message)
+        setSuccess(result.message)
         setTimeout(() => {
           router.push("/login")
         }, 3000)
         return
       }
 
-      if (data?.user) {
+      if (result.data?.user) {
+        console.log("Signup successful, redirecting...")
         setSuccess("Account created successfully! Redirecting to your dashboard...")
 
         // Redirect based on role after successful signup
@@ -109,7 +112,7 @@ export default function SignupPage() {
         }, 1500)
       }
     } catch (err: any) {
-      console.error("Signup error:", err)
+      console.error("Signup exception:", err)
       setError(err.message || "An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
@@ -315,6 +318,17 @@ export default function SignupPage() {
                   Sign in here
                 </Link>
               </p>
+            </div>
+
+            <div className="mt-4 text-xs text-gray-500 text-center">
+              By creating an account, you agree to our{" "}
+              <Link href="/terms" className="text-green-600 hover:text-green-500">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" className="text-green-600 hover:text-green-500">
+                Privacy Policy
+              </Link>
             </div>
           </CardContent>
         </Card>
