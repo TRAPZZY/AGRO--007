@@ -8,32 +8,124 @@ import { Progress } from "@/components/ui/progress"
 import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { ErrorMessage } from "@/components/ui/error-message"
-import { useRealTimeInvestments } from "@/lib/supabase/real-time"
 import { useToast } from "@/lib/hooks/use-toast"
 import { ToastContainer } from "@/components/ui/toast"
 import { Eye, TrendingUp, Calendar, DollarSign, Target, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import Image from "next/image"
 import { getCurrentUser } from "@/lib/auth"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+
+// Mock data fallback
+const mockInvestments = [
+  {
+    id: "1",
+    investor_id: "investor1",
+    project_id: "1",
+    amount: 200000,
+    status: "active",
+    expected_return: 18,
+    actual_return: 15,
+    created_at: "2024-01-15",
+    updated_at: "2024-01-15",
+    projects: {
+      id: "1",
+      title: "Organic Rice Farming - Kebbi State",
+      description: "Sustainable rice farming using organic methods",
+      farmer_id: "farmer1",
+      category: "crops",
+      location: "Kebbi State",
+      funding_goal: 500000,
+      amount_raised: 450000,
+      status: "active",
+      image_url: "/placeholder.svg?height=200&width=300",
+      expected_return: 18,
+      risk_level: "low",
+      created_at: "2024-01-01",
+      updated_at: "2024-01-15",
+      users: { name: "Aminu Hassan" },
+    },
+  },
+]
 
 export default function MyInvestmentsPage() {
   const [user, setUser] = useState<any>(null)
+  const [investments, setInvestments] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const { toasts, toast, removeToast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user } = await getCurrentUser()
-      if (!user) {
+      try {
+        const { user } = await getCurrentUser()
+        if (!user) {
+          router.push("/login")
+          return
+        }
+        setUser(user)
+      } catch (err) {
+        console.error("Auth error:", err)
         router.push("/login")
-        return
       }
-      setUser(user)
     }
     checkAuth()
   }, [router])
 
-  const { investments, loading, error } = useRealTimeInvestments(user?.id || "")
+  useEffect(() => {
+    const fetchInvestments = async () => {
+      if (!user?.id) return
+
+      try {
+        setLoading(true)
+        setError(null)
+
+        const supabase = createClient()
+        const { data, error: fetchError } = await supabase
+          .from("investments")
+          .select(`
+            *,
+            projects!investments_project_id_fkey (
+              *,
+              users!projects_farmer_id_fkey (
+                id,
+                name,
+                email
+              )
+            )
+          `)
+          .eq("investor_id", user.id)
+          .order("created_at", { ascending: false })
+
+        if (fetchError) {
+          console.error("Supabase error:", fetchError)
+          // Use mock data as fallback
+          setInvestments(mockInvestments)
+          toast({
+            title: "Using Demo Data",
+            description: "Connected to demo investments for testing",
+            type: "info",
+          })
+        } else {
+          setInvestments(data || [])
+        }
+      } catch (err) {
+        console.error("Fetch error:", err)
+        // Use mock data as fallback
+        setInvestments(mockInvestments)
+        toast({
+          title: "Using Demo Data",
+          description: "Connected to demo investments for testing",
+          type: "info",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchInvestments()
+  }, [user?.id, toast])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -151,7 +243,12 @@ export default function MyInvestmentsPage() {
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">No investments yet</h3>
                 <p className="text-gray-600 mb-6">Start investing in agricultural projects to build your portfolio</p>
-                <Button className="bg-green-600 hover:bg-green-700">Browse Projects</Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => router.push("/dashboard/investor/browse-projects")}
+                >
+                  Browse Projects
+                </Button>
               </CardContent>
             </Card>
           ) : (

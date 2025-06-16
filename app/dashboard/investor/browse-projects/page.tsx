@@ -9,9 +9,48 @@ import { useToast } from "@/lib/hooks/use-toast"
 import { ToastContainer } from "@/components/ui/toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { useRealTimeProjects } from "@/lib/supabase/real-time"
 import { getCurrentUser } from "@/lib/auth"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+
+// Mock data fallback
+const mockProjects = [
+  {
+    id: "1",
+    title: "Organic Rice Farming - Kebbi State",
+    description:
+      "Sustainable rice farming using organic methods to produce high-quality rice for local and export markets.",
+    image_url: "/placeholder.svg?height=200&width=300",
+    funding_goal: 500000,
+    amount_raised: 350000,
+    category: "crops",
+    location: "Kebbi State",
+    status: "active",
+    farmer_id: "farmer1",
+    users: { name: "Aminu Hassan" },
+    expected_return: 18,
+    risk_level: "low",
+    created_at: "2024-01-01",
+    updated_at: "2024-01-15",
+  },
+  {
+    id: "2",
+    title: "Modern Poultry Farm Setup",
+    description: "Establishing a modern poultry farm with automated feeding systems and climate control.",
+    image_url: "/placeholder.svg?height=200&width=300",
+    funding_goal: 800000,
+    amount_raised: 200000,
+    category: "poultry",
+    location: "Ogun State",
+    status: "active",
+    farmer_id: "farmer2",
+    users: { name: "Grace Okonkwo" },
+    expected_return: 20,
+    risk_level: "medium",
+    created_at: "2024-01-20",
+    updated_at: "2024-02-01",
+  },
+]
 
 export default function BrowseProjectsPage() {
   const [selectedProject, setSelectedProject] = useState<any>(null)
@@ -19,21 +58,77 @@ export default function BrowseProjectsPage() {
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [user, setUser] = useState<any>(null)
-  const { projects, loading, error } = useRealTimeProjects()
+  const [projects, setProjects] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const { toasts, toast, removeToast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user } = await getCurrentUser()
-      if (!user) {
+      try {
+        const { user } = await getCurrentUser()
+        if (!user) {
+          router.push("/login")
+          return
+        }
+        setUser(user)
+      } catch (err) {
+        console.error("Auth error:", err)
         router.push("/login")
-        return
       }
-      setUser(user)
     }
     checkAuth()
   }, [router])
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const supabase = createClient()
+        const { data, error: fetchError } = await supabase
+          .from("projects")
+          .select(`
+            *,
+            users!projects_farmer_id_fkey (
+              id,
+              name,
+              email
+            )
+          `)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+
+        if (fetchError) {
+          console.error("Supabase error:", fetchError)
+          // Use mock data as fallback
+          setProjects(mockProjects)
+          toast({
+            title: "Using Demo Data",
+            description: "Connected to demo projects for testing",
+            type: "info",
+          })
+        } else {
+          setProjects(data || [])
+        }
+      } catch (err) {
+        console.error("Fetch error:", err)
+        // Use mock data as fallback
+        setProjects(mockProjects)
+        toast({
+          title: "Using Demo Data",
+          description: "Connected to demo projects for testing",
+          type: "info",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProjects()
+  }, [toast])
 
   const handleInvest = (projectId: string) => {
     if (!user) {
@@ -55,7 +150,7 @@ export default function BrowseProjectsPage() {
     const matchesSearch =
       project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (project.users?.name || "").toLowerCase().includes(searchTerm.toLowerCase())
-    const isActive = project.status === "active" // Only show active projects
+    const isActive = project.status === "active"
     return matchesCategory && matchesSearch && isActive
   })
 

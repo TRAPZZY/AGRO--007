@@ -7,25 +7,26 @@ export interface Toast {
   title: string
   description?: string
   type: "success" | "error" | "info" | "warning"
+  duration?: number
 }
 
 export function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
-  const toast = useCallback(({ title, description, type = "info" }: Omit<Toast, "id">) => {
+  const toast = useCallback(({ title, description, type, duration = 5000 }: Omit<Toast, "id">) => {
     const id = Math.random().toString(36).substr(2, 9)
-    const newToast = { id, title, description, type }
+    const newToast: Toast = { id, title, description, type, duration }
 
     setToasts((prev) => [...prev, newToast])
 
-    // Auto remove after 5 seconds
+    // Auto remove toast after duration
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, 5000)
+      removeToast(id)
+    }, duration)
   }, [])
 
   const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
+    setToasts((prev) => prev.filter((toast) => toast.id !== id))
   }, [])
 
   return { toasts, toast, removeToast }
