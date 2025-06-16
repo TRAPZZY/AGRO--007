@@ -5,123 +5,37 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { DashboardSidebar } from "@/components/dashboard-sidebar"
+import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { ErrorMessage } from "@/components/ui/error-message"
+import { useRealTimeInvestments } from "@/lib/supabase/real-time"
+import { useToast } from "@/lib/hooks/use-toast"
+import { ToastContainer } from "@/components/ui/toast"
 import { Eye, TrendingUp, Calendar, DollarSign, Target, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import Image from "next/image"
-import type { Investment, Project } from "@/lib/types"
-
-// Mock data - replace with actual API calls
-const mockInvestments: (Investment & { project: Project })[] = [
-  {
-    id: "1",
-    investor_id: "investor1",
-    project_id: "1",
-    amount: 200000,
-    status: "active",
-    expected_return: 18,
-    actual_return: 15,
-    created_at: "2024-01-15",
-    updated_at: "2024-01-15",
-    project: {
-      id: "1",
-      title: "Organic Rice Farming - Kebbi State",
-      description: "Sustainable rice farming using organic methods",
-      farmer_id: "farmer1",
-      farmer_name: "Aminu Hassan",
-      category: "crops",
-      location: "Kebbi State",
-      funding_goal: 500000,
-      amount_raised: 450000,
-      status: "active",
-      image_url: "/placeholder.svg?height=200&width=300",
-      expected_return: 18,
-      risk_level: "low",
-      created_at: "2024-01-01",
-      updated_at: "2024-01-15",
-    },
-  },
-  {
-    id: "2",
-    investor_id: "investor1",
-    project_id: "2",
-    amount: 350000,
-    status: "completed",
-    expected_return: 22,
-    actual_return: 25,
-    created_at: "2023-12-01",
-    updated_at: "2024-01-10",
-    project: {
-      id: "2",
-      title: "Cassava Processing Plant",
-      description: "Setting up a cassava processing facility",
-      farmer_id: "farmer2",
-      farmer_name: "John Adebayo",
-      category: "processing",
-      location: "Oyo State",
-      funding_goal: 1200000,
-      amount_raised: 1200000,
-      status: "completed",
-      image_url: "/placeholder.svg?height=200&width=300",
-      expected_return: 22,
-      risk_level: "medium",
-      created_at: "2023-11-15",
-      updated_at: "2024-01-10",
-    },
-  },
-  {
-    id: "3",
-    investor_id: "investor1",
-    project_id: "3",
-    amount: 150000,
-    status: "active",
-    expected_return: 20,
-    actual_return: 8,
-    created_at: "2024-02-01",
-    updated_at: "2024-02-01",
-    project: {
-      id: "3",
-      title: "Modern Poultry Farm Setup",
-      description: "Establishing a modern poultry farm",
-      farmer_id: "farmer3",
-      farmer_name: "Grace Okonkwo",
-      category: "poultry",
-      location: "Ogun State",
-      funding_goal: 800000,
-      amount_raised: 300000,
-      status: "active",
-      image_url: "/placeholder.svg?height=200&width=300",
-      expected_return: 20,
-      risk_level: "medium",
-      created_at: "2024-01-20",
-      updated_at: "2024-02-01",
-    },
-  },
-]
+import { getCurrentUser } from "@/lib/auth"
+import { useRouter } from "next/navigation"
 
 export default function MyInvestmentsPage() {
-  const [investments, setInvestments] = useState<(Investment & { project: Project })[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<any>(null)
+  const { toasts, toast, removeToast } = useToast()
+  const router = useRouter()
 
   useEffect(() => {
-    const fetchInvestments = async () => {
-      try {
-        setIsLoading(true)
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-        setInvestments(mockInvestments)
-      } catch (err) {
-        setError("Failed to load investments. Please try again.")
-      } finally {
-        setIsLoading(false)
+    const checkAuth = async () => {
+      const { user } = await getCurrentUser()
+      if (!user) {
+        router.push("/login")
+        return
       }
+      setUser(user)
     }
+    checkAuth()
+  }, [router])
 
-    fetchInvestments()
-  }, [])
+  const { investments, loading, error } = useRealTimeInvestments(user?.id || "")
 
-  const getStatusColor = (status: Investment["status"]) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
         return "bg-blue-100 text-blue-800"
@@ -136,15 +50,10 @@ export default function MyInvestmentsPage() {
     }
   }
 
-  const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0)
-  const totalReturns = investments.reduce((sum, inv) => sum + ((inv.actual_return || 0) * inv.amount) / 100, 0)
-  const activeInvestments = investments.filter((inv) => inv.status === "active").length
-  const completedInvestments = investments.filter((inv) => inv.status === "completed").length
-
-  if (isLoading) {
+  if (loading || !user) {
     return (
-      <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-        <DashboardSidebar userRole="investor" userName="Sarah Investor" />
+      <div className="flex min-h-screen bg-gray-50">
+        <CollapsibleSidebar userRole="investor" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <LoadingSpinner size="lg" />
@@ -155,73 +64,78 @@ export default function MyInvestmentsPage() {
     )
   }
 
+  const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0)
+  const totalReturns = investments.reduce((sum, inv) => sum + ((inv.actual_return || 0) * inv.amount) / 100, 0)
+  const activeInvestments = investments.filter((inv) => inv.status === "active").length
+  const completedInvestments = investments.filter((inv) => inv.status === "completed").length
+
   return (
-    <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-      <DashboardSidebar userRole="investor" userName="Sarah Investor" />
+    <div className="flex min-h-screen bg-gray-50">
+      <CollapsibleSidebar userRole="investor" />
 
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">My Investments</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">My Investments</h1>
             <p className="text-gray-600 mt-1">Track your agricultural investment portfolio</p>
           </div>
 
           {error && <ErrorMessage message={error} className="mb-6" />}
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <Card className="agro-card">
-              <CardContent className="p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+            <Card>
+              <CardContent className="p-4 md:p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Total Invested</p>
-                    <p className="text-2xl font-bold text-gray-900">₦{totalInvested.toLocaleString()}</p>
+                    <p className="text-xl md:text-2xl font-bold text-gray-900">₦{totalInvested.toLocaleString()}</p>
                   </div>
-                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                    <DollarSign className="w-6 h-6 text-blue-600" />
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <DollarSign className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="agro-card">
-              <CardContent className="p-6">
+            <Card>
+              <CardContent className="p-4 md:p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Total Returns</p>
-                    <p className="text-2xl font-bold text-green-600">₦{totalReturns.toLocaleString()}</p>
+                    <p className="text-xl md:text-2xl font-bold text-green-600">₦{totalReturns.toLocaleString()}</p>
                   </div>
-                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                    <TrendingUp className="w-6 h-6 text-green-600" />
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-green-100 rounded-full flex items-center justify-center">
+                    <TrendingUp className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="agro-card">
-              <CardContent className="p-6">
+            <Card>
+              <CardContent className="p-4 md:p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Active Investments</p>
-                    <p className="text-2xl font-bold text-gray-900">{activeInvestments}</p>
+                    <p className="text-xl md:text-2xl font-bold text-gray-900">{activeInvestments}</p>
                   </div>
-                  <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                    <Target className="w-6 h-6 text-yellow-600" />
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+                    <Target className="w-5 h-5 md:w-6 md:h-6 text-yellow-600" />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="agro-card">
-              <CardContent className="p-6">
+            <Card>
+              <CardContent className="p-4 md:p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Completed</p>
-                    <p className="text-2xl font-bold text-gray-900">{completedInvestments}</p>
+                    <p className="text-xl md:text-2xl font-bold text-gray-900">{completedInvestments}</p>
                   </div>
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                    <Calendar className="w-6 h-6 text-purple-600" />
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                    <Calendar className="w-5 h-5 md:w-6 md:h-6 text-purple-600" />
                   </div>
                 </div>
               </CardContent>
@@ -230,32 +144,35 @@ export default function MyInvestmentsPage() {
 
           {/* Investments List */}
           {investments.length === 0 ? (
-            <Card className="agro-card">
-              <CardContent className="p-12 text-center">
+            <Card>
+              <CardContent className="p-8 md:p-12 text-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <TrendingUp className="w-8 h-8 text-green-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">No investments yet</h3>
                 <p className="text-gray-600 mb-6">Start investing in agricultural projects to build your portfolio</p>
-                <Button className="agro-button">Browse Projects</Button>
+                <Button className="bg-green-600 hover:bg-green-700">Browse Projects</Button>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4 md:space-y-6">
               {investments.map((investment) => {
-                const progressPercentage = (investment.project.amount_raised / investment.project.funding_goal) * 100
+                const project = investment.projects
+                if (!project) return null
+
+                const progressPercentage = (project.amount_raised / project.funding_goal) * 100
                 const returnDifference = (investment.actual_return || 0) - investment.expected_return
                 const isPositiveReturn = returnDifference >= 0
 
                 return (
-                  <Card key={investment.id} className="agro-card">
-                    <CardContent className="p-6">
-                      <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+                  <Card key={investment.id}>
+                    <CardContent className="p-4 md:p-6">
+                      <div className="flex flex-col lg:flex-row lg:items-center gap-4 md:gap-6">
                         {/* Project Image */}
                         <div className="relative w-full lg:w-48 h-32 rounded-lg overflow-hidden">
                           <Image
-                            src={investment.project.image_url || "/placeholder.svg?height=128&width=192"}
-                            alt={investment.project.title}
+                            src={project.image_url || "/placeholder.svg?height=128&width=192"}
+                            alt={project.title}
                             fill
                             className="object-cover"
                           />
@@ -269,9 +186,9 @@ export default function MyInvestmentsPage() {
                         {/* Project Details */}
                         <div className="flex-1 space-y-4">
                           <div>
-                            <h3 className="text-xl font-semibold text-gray-900 mb-1">{investment.project.title}</h3>
+                            <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">{project.title}</h3>
                             <p className="text-gray-600 text-sm">
-                              by {investment.project.farmer_name} • {investment.project.location}
+                              by {project.users?.name || "Unknown"} • {project.location}
                             </p>
                           </div>
 
@@ -288,19 +205,21 @@ export default function MyInvestmentsPage() {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div>
                               <p className="text-xs text-gray-500 uppercase tracking-wide">Your Investment</p>
-                              <p className="text-lg font-semibold text-gray-900">
+                              <p className="text-base md:text-lg font-semibold text-gray-900">
                                 ₦{investment.amount.toLocaleString()}
                               </p>
                             </div>
                             <div>
                               <p className="text-xs text-gray-500 uppercase tracking-wide">Expected Return</p>
-                              <p className="text-lg font-semibold text-blue-600">{investment.expected_return}%</p>
+                              <p className="text-base md:text-lg font-semibold text-blue-600">
+                                {investment.expected_return}%
+                              </p>
                             </div>
                             <div>
                               <p className="text-xs text-gray-500 uppercase tracking-wide">Current Return</p>
                               <div className="flex items-center">
                                 <p
-                                  className={`text-lg font-semibold ${isPositiveReturn ? "text-green-600" : "text-red-600"}`}
+                                  className={`text-base md:text-lg font-semibold ${isPositiveReturn ? "text-green-600" : "text-red-600"}`}
                                 >
                                   {investment.actual_return || 0}%
                                 </p>
@@ -313,7 +232,7 @@ export default function MyInvestmentsPage() {
                             </div>
                             <div>
                               <p className="text-xs text-gray-500 uppercase tracking-wide">Projected Value</p>
-                              <p className="text-lg font-semibold text-green-600">
+                              <p className="text-base md:text-lg font-semibold text-green-600">
                                 ₦{(investment.amount * (1 + (investment.actual_return || 0) / 100)).toLocaleString()}
                               </p>
                             </div>
@@ -321,13 +240,13 @@ export default function MyInvestmentsPage() {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex flex-col space-y-2 lg:w-32">
-                          <Button variant="outline" size="sm" className="w-full">
+                        <div className="flex flex-row lg:flex-col space-x-2 lg:space-x-0 lg:space-y-2 lg:w-32">
+                          <Button variant="outline" size="sm" className="flex-1 lg:w-full">
                             <Eye className="w-4 h-4 mr-1" />
                             View Details
                           </Button>
                           {investment.status === "completed" && (
-                            <Button variant="outline" size="sm" className="w-full text-green-600">
+                            <Button variant="outline" size="sm" className="flex-1 lg:w-full text-green-600">
                               Download Report
                             </Button>
                           )}
@@ -341,6 +260,8 @@ export default function MyInvestmentsPage() {
           )}
         </div>
       </div>
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   )
 }

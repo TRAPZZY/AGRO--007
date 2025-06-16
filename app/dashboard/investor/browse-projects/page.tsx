@@ -1,82 +1,91 @@
 "use client"
 
-import { useState } from "react"
-import { DashboardSidebar } from "@/components/dashboard-sidebar"
+import { useState, useEffect } from "react"
+import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { ProjectCard } from "@/components/project-card"
 import { InvestmentModal } from "@/components/investment-modal"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { useToast } from "@/lib/hooks/use-toast"
+import { ToastContainer } from "@/components/ui/toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-
-const mockProjects = [
-  {
-    id: "1",
-    title: "Organic Rice Farming - Kebbi State",
-    description:
-      "Sustainable rice farming using organic methods to produce high-quality rice for local and export markets.",
-    image: "/placeholder.svg?height=200&width=300",
-    fundingGoal: 500000,
-    amountRaised: 350000,
-    category: "crops",
-    farmerName: "Aminu Hassan",
-    location: "Kebbi State",
-  },
-  {
-    id: "2",
-    title: "Modern Poultry Farm Setup",
-    description: "Establishing a modern poultry farm with automated feeding systems and climate control.",
-    image: "/placeholder.svg?height=200&width=300",
-    fundingGoal: 800000,
-    amountRaised: 200000,
-    category: "poultry",
-    farmerName: "Grace Okonkwo",
-    location: "Ogun State",
-  },
-  {
-    id: "3",
-    title: "Cassava Processing Plant",
-    description: "Setting up a cassava processing facility to produce garri, starch, and other cassava products.",
-    image: "/placeholder.svg?height=200&width=300",
-    fundingGoal: 1200000,
-    amountRaised: 900000,
-    category: "processing",
-    farmerName: "John Adebayo",
-    location: "Oyo State",
-  },
-]
+import { useRealTimeProjects } from "@/lib/supabase/real-time"
+import { getCurrentUser } from "@/lib/auth"
+import { useRouter } from "next/navigation"
 
 export default function BrowseProjectsPage() {
   const [selectedProject, setSelectedProject] = useState<any>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
+  const [user, setUser] = useState<any>(null)
+  const { projects, loading, error } = useRealTimeProjects()
+  const { toasts, toast, removeToast } = useToast()
+  const router = useRouter()
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { user } = await getCurrentUser()
+      if (!user) {
+        router.push("/login")
+        return
+      }
+      setUser(user)
+    }
+    checkAuth()
+  }, [router])
 
   const handleInvest = (projectId: string) => {
-    const project = mockProjects.find((p) => p.id === projectId)
+    if (!user) {
+      toast({
+        title: "Please Login",
+        description: "You need to be logged in to invest.",
+        type: "error",
+      })
+      return
+    }
+
+    const project = projects.find((p) => p.id === projectId)
     setSelectedProject(project)
     setIsModalOpen(true)
   }
 
-  const filteredProjects = mockProjects.filter((project) => {
+  const filteredProjects = projects.filter((project) => {
     const matchesCategory = categoryFilter === "all" || project.category === categoryFilter
     const matchesSearch =
       project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.farmerName.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesCategory && matchesSearch
+      (project.users?.name || "").toLowerCase().includes(searchTerm.toLowerCase())
+    const isActive = project.status === "active" // Only show active projects
+    return matchesCategory && matchesSearch && isActive
   })
 
+  if (loading) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <CollapsibleSidebar userRole="investor" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <LoadingSpinner size="lg" />
+            <p className="mt-4 text-gray-600">Loading projects...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-screen bg-gray-50">
-      <DashboardSidebar userRole="investor" />
+    <div className="flex min-h-screen bg-gray-50">
+      <CollapsibleSidebar userRole="investor" />
 
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Browse Projects</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Browse Projects</h1>
             <p className="text-gray-600">Discover agricultural projects to invest in</p>
           </div>
 
           {/* Filters */}
-          <div className="flex space-x-4 mb-8">
+          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-8">
             <div className="flex-1">
               <Input
                 placeholder="Search projects or farmers..."
@@ -85,7 +94,7 @@ export default function BrowseProjectsPage() {
               />
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Filter by category" />
               </SelectTrigger>
               <SelectContent>
@@ -94,26 +103,40 @@ export default function BrowseProjectsPage() {
                 <SelectItem value="poultry">Poultry</SelectItem>
                 <SelectItem value="livestock">Livestock</SelectItem>
                 <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="equipment">Equipment</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* Projects Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {filteredProjects.map((project) => (
-              <ProjectCard key={project.id} {...project} onInvest={handleInvest} />
+              <ProjectCard
+                key={project.id}
+                {...project}
+                farmerName={project.users?.name || "Unknown Farmer"}
+                onInvest={handleInvest}
+              />
             ))}
           </div>
 
-          {filteredProjects.length === 0 && (
+          {filteredProjects.length === 0 && !loading && (
             <div className="text-center py-12">
               <p className="text-gray-500">No projects found matching your criteria.</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="text-center py-12">
+              <p className="text-red-500">Error loading projects: {error}</p>
             </div>
           )}
         </div>
       </div>
 
       <InvestmentModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} project={selectedProject} />
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   )
 }

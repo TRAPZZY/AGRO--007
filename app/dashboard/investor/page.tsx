@@ -5,15 +5,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { useToast } from "@/lib/hooks/use-toast"
+import { ToastContainer } from "@/components/ui/toast"
 import { DollarSign, TrendingUp, PieChart, Target } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
+import { supabase } from "@/lib/supabase/client"
 
 export default function InvestorDashboard() {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [stats, setStats] = useState({
+    totalInvested: 0,
+    activeInvestments: 0,
+    expectedReturns: 0,
+    portfolioGrowth: 0,
+  })
   const router = useRouter()
+  const { toasts, toast, removeToast } = useToast()
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -25,11 +35,77 @@ export default function InvestorDashboard() {
       }
 
       setUser(user)
+      await fetchStats(user.id)
       setIsLoading(false)
     }
 
     checkAuth()
   }, [router])
+
+  const fetchStats = async (investorId: string) => {
+    try {
+      const { data: investments, error } = await supabase
+        .from("investments")
+        .select(`
+          *,
+          projects(*)
+        `)
+        .eq("investor_id", investorId)
+
+      if (error) throw error
+
+      const totalInvested = investments?.reduce((sum, inv) => sum + inv.amount, 0) || 0
+      const activeInvestments = investments?.filter((inv) => inv.status === "active").length || 0
+      const expectedReturns =
+        investments?.reduce((sum, inv) => {
+          return sum + inv.amount * (inv.expected_return / 100)
+        }, 0) || 0
+      const portfolioGrowth =
+        totalInvested > 0 ? Math.round(((expectedReturns - totalInvested) / totalInvested) * 100) : 0
+
+      setStats({
+        totalInvested,
+        activeInvestments,
+        expectedReturns,
+        portfolioGrowth,
+      })
+    } catch (error: any) {
+      console.error("Error fetching stats:", error)
+    }
+  }
+
+  // Real-time subscription for investment updates
+  useEffect(() => {
+    if (!user) return
+
+    const subscription = supabase
+      .channel("investor_dashboard")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "investments",
+          filter: `investor_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            toast({
+              title: "Investment Confirmed!",
+              description: `Your investment of ₦${payload.new.amount.toLocaleString()} has been processed.`,
+              type: "success",
+            })
+          }
+          // Refresh stats
+          fetchStats(user.id)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [user, toast])
 
   if (isLoading) {
     return (
@@ -43,25 +119,25 @@ export default function InvestorDashboard() {
     <div className="flex min-h-screen bg-gray-50">
       <CollapsibleSidebar userRole="investor" />
 
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               Welcome back, {user?.user_metadata?.name || user?.email}!
             </h1>
             <p className="text-gray-600 mt-2">Track your investments and discover new opportunities</p>
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Invested</CardTitle>
                 <DollarSign className="h-4 w-4 text-green-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">₦1,250,000</div>
-                <p className="text-xs text-muted-foreground">+15% from last month</p>
+                <div className="text-xl md:text-2xl font-bold">₦{stats.totalInvested.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Across all projects</p>
               </CardContent>
             </Card>
 
@@ -71,8 +147,8 @@ export default function InvestorDashboard() {
                 <PieChart className="h-4 w-4 text-green-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">8</div>
-                <p className="text-xs text-muted-foreground">Across 5 projects</p>
+                <div className="text-xl md:text-2xl font-bold">{stats.activeInvestments}</div>
+                <p className="text-xs text-muted-foreground">Currently running</p>
               </CardContent>
             </Card>
 
@@ -82,8 +158,8 @@ export default function InvestorDashboard() {
                 <TrendingUp className="h-4 w-4 text-green-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">₦1,875,000</div>
-                <p className="text-xs text-muted-foreground">50% ROI projected</p>
+                <div className="text-xl md:text-2xl font-bold">₦{stats.expectedReturns.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Projected earnings</p>
               </CardContent>
             </Card>
 
@@ -93,14 +169,14 @@ export default function InvestorDashboard() {
                 <Target className="h-4 w-4 text-green-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">+25%</div>
-                <p className="text-xs text-muted-foreground">This quarter</p>
+                <div className="text-xl md:text-2xl font-bold">+{stats.portfolioGrowth}%</div>
+                <p className="text-xs text-muted-foreground">Expected growth</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Quick Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
             <Card>
               <CardHeader>
                 <CardTitle>Investment Opportunities</CardTitle>
@@ -133,22 +209,22 @@ export default function InvestorDashboard() {
                   <div className="flex items-center space-x-4">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium">Investment successful</p>
-                      <p className="text-xs text-gray-500">₦100,000 in Rice Farming Project</p>
+                      <p className="text-sm font-medium">Dashboard synchronized</p>
+                      <p className="text-xs text-gray-500">Real-time data updated</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium">Project update received</p>
-                      <p className="text-xs text-gray-500">Poultry Farm - Milestone achieved</p>
+                      <p className="text-sm font-medium">Portfolio active</p>
+                      <p className="text-xs text-gray-500">{stats.activeInvestments} investments running</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium">New project available</p>
-                      <p className="text-xs text-gray-500">Cassava Processing Plant</p>
+                      <p className="text-sm font-medium">New opportunities available</p>
+                      <p className="text-xs text-gray-500">Browse projects to invest</p>
                     </div>
                   </div>
                 </div>
@@ -157,6 +233,8 @@ export default function InvestorDashboard() {
           </div>
         </div>
       </div>
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   )
 }
