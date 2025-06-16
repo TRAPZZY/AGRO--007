@@ -12,7 +12,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Leaf, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { signIn, getCurrentUser } from "@/lib/auth"
+import { signIn, isAuthenticated } from "@/lib/auth"
 import { signInSchema, type SignInInput } from "@/lib/validations"
 
 export default function LoginPage() {
@@ -22,6 +22,7 @@ export default function LoginPage() {
   })
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Partial<SignInInput>>({})
@@ -32,19 +33,25 @@ export default function LoginPage() {
   useEffect(() => {
     const checkExistingAuth = async () => {
       try {
-        const { user } = await getCurrentUser()
-        if (user) {
-          // User is already logged in, redirect to appropriate dashboard
-          const dashboardPath = `/dashboard/${user.role || "investor"}`
-          router.push(dashboardPath)
+        setIsCheckingAuth(true)
+        const authenticated = await isAuthenticated()
+
+        if (authenticated) {
+          // User is already logged in, redirect to dashboard
+          const redirectTo = searchParams.get("redirect") || "/dashboard/investor"
+          router.push(redirectTo)
+          return
         }
       } catch (error) {
-        // User is not logged in, continue with login flow
+        console.error("Auth check error:", error)
+        // Continue with login flow if auth check fails
+      } finally {
+        setIsCheckingAuth(false)
       }
     }
 
     checkExistingAuth()
-  }, [router])
+  }, [router, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,7 +87,7 @@ export default function LoginPage() {
 
         // Get the redirect URL from search params or determine based on role
         const redirectTo = searchParams.get("redirect")
-        const userRole = data.user.user_metadata?.role || "investor"
+        const userRole = data.user.user_metadata?.role || data.user.role || "investor"
 
         setTimeout(() => {
           if (redirectTo) {
@@ -124,8 +131,21 @@ export default function LoginPage() {
 
     // Auto-submit after setting demo credentials
     setTimeout(() => {
-      handleSubmit({ preventDefault: () => {} } as React.FormEvent)
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+      handleSubmit(fakeEvent)
     }, 100)
+  }
+
+  // Show loading spinner while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    )
   }
 
   return (

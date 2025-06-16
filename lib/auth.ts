@@ -63,7 +63,7 @@ export async function signIn({ email, password }: SignInInput) {
     if (error) throw error
 
     // Get user profile after successful login
-    if (data.user) {
+    if (data.user && data.session) {
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select("*")
@@ -123,31 +123,40 @@ export async function signOut() {
 
 export async function getCurrentUser() {
   try {
+    // First check if there's an active session
     const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
 
-    if (error) throw error
-
-    if (user) {
-      // Get user profile
-      const { data: profile, error: profileError } = await supabase.from("users").select("*").eq("id", user.id).single()
-
-      if (profileError && profileError.code !== "PGRST116") {
-        console.error("Profile fetch error:", profileError)
-      }
-
-      return {
-        user: profile ? { ...user, ...profile } : user,
-        error: null,
-      }
+    if (sessionError) {
+      console.error("Session error:", sessionError)
+      return { user: null, error: sessionError }
     }
 
-    return { user: null, error: null }
+    // If no session, return null user (not an error)
+    if (!session || !session.user) {
+      return { user: null, error: null }
+    }
+
+    const user = session.user
+
+    // Get user profile
+    const { data: profile, error: profileError } = await supabase.from("users").select("*").eq("id", user.id).single()
+
+    if (profileError && profileError.code !== "PGRST116") {
+      console.error("Profile fetch error:", profileError)
+      // Return user without profile if profile fetch fails
+      return { user, error: null }
+    }
+
+    return {
+      user: profile ? { ...user, ...profile } : user,
+      error: null,
+    }
   } catch (error: any) {
     console.error("Get current user error:", error)
-    return { user: null, error }
+    return { user: null, error: null } // Don't throw errors, just return null user
   }
 }
 
@@ -174,5 +183,18 @@ export async function updatePassword(newPassword: string) {
   } catch (error) {
     console.error("Update password error:", error)
     return { error }
+  }
+}
+
+// Helper function to check if user is authenticated
+export async function isAuthenticated() {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    return !!session
+  } catch (error) {
+    console.error("Auth check error:", error)
+    return false
   }
 }
