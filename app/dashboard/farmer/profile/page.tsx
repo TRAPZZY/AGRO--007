@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,15 +8,23 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { DashboardSidebar } from "@/components/dashboard-sidebar"
+import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { useToast } from "@/lib/hooks/use-toast"
+import { ToastContainer } from "@/components/ui/toast"
 import { Upload, User, Mail, Shield, Camera, Phone } from "lucide-react"
 import { NIGERIAN_STATES } from "@/lib/constants"
+import { getCurrentUser } from "@/lib/auth"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
 
 export default function FarmerProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const { toasts, toast, removeToast } = useToast()
+  const router = useRouter()
+
   const [profileData, setProfileData] = useState({
     name: "John Adebayo",
     email: "john.adebayo@example.com",
@@ -34,15 +42,35 @@ export default function FarmerProfilePage() {
 
   const [kycStatus] = useState<"pending" | "approved" | "rejected">("approved")
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { user } = await getCurrentUser()
+      if (!user) {
+        router.push("/login")
+        return
+      }
+      setUser(user)
+    }
+    checkAuth()
+  }, [router])
+
   const handleSave = async () => {
     setIsLoading(true)
     try {
-      // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 2000))
       setIsEditing(false)
-      // Show success message
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been successfully updated.",
+        type: "success",
+      })
     } catch (error) {
       console.error("Failed to update profile:", error)
+      toast({
+        title: "Update Failed",
+        description: "Failed to update profile. Please try again.",
+        type: "error",
+      })
     } finally {
       setIsLoading(false)
     }
@@ -61,31 +89,42 @@ export default function FarmerProfilePage() {
     }
   }
 
+  if (!user) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <CollapsibleSidebar userRole="farmer" />
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-      <DashboardSidebar userRole="farmer" userName="John Adebayo" />
+    <div className="flex min-h-screen bg-gray-50">
+      <CollapsibleSidebar userRole="farmer" />
 
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Profile Settings</h1>
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Profile Settings</h1>
             <p className="text-gray-600 mt-1">Manage your farmer profile and account information</p>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 md:gap-8">
             {/* Main Profile Information */}
             <div className="xl:col-span-2 space-y-6">
               {/* Basic Information */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                     <div>
                       <CardTitle>Personal Information</CardTitle>
                       <CardDescription>Update your personal details and contact information</CardDescription>
                     </div>
                     {!isEditing && (
-                      <Button onClick={() => setIsEditing(true)} variant="outline">
+                      <Button onClick={() => setIsEditing(true)} variant="outline" size="sm">
                         Edit Profile
                       </Button>
                     )}
@@ -93,9 +132,9 @@ export default function FarmerProfilePage() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Profile Picture */}
-                  <div className="flex items-center space-x-6">
+                  <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
                     <div className="relative">
-                      <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100">
+                      <div className="w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden bg-gray-100">
                         <Image
                           src={profileData.avatar_url || "/placeholder.svg"}
                           alt="Profile"
@@ -110,7 +149,7 @@ export default function FarmerProfilePage() {
                         </button>
                       )}
                     </div>
-                    <div>
+                    <div className="text-center sm:text-left">
                       <h3 className="text-lg font-semibold text-gray-900">{profileData.name}</h3>
                       <p className="text-gray-600">Farmer</p>
                       <Badge className={getKycStatusColor(kycStatus)} variant="secondary">
@@ -120,7 +159,7 @@ export default function FarmerProfilePage() {
                   </div>
 
                   {/* Form Fields */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <Label htmlFor="name">Full Name</Label>
                       <Input
@@ -128,7 +167,7 @@ export default function FarmerProfilePage() {
                         value={profileData.name}
                         onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -139,7 +178,7 @@ export default function FarmerProfilePage() {
                         value={profileData.email}
                         onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -149,7 +188,7 @@ export default function FarmerProfilePage() {
                         value={profileData.phone}
                         onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -159,7 +198,7 @@ export default function FarmerProfilePage() {
                         onValueChange={(value) => setProfileData({ ...profileData, location: value })}
                         disabled={!isEditing}
                       >
-                        <SelectTrigger className="agro-input">
+                        <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select state" />
                         </SelectTrigger>
                         <SelectContent>
@@ -181,14 +220,14 @@ export default function FarmerProfilePage() {
                       onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                       disabled={!isEditing}
                       rows={4}
-                      className="agro-input"
+                      className="mt-1"
                       placeholder="Tell us about your farming experience and expertise..."
                     />
                   </div>
 
                   {isEditing && (
-                    <div className="flex space-x-4">
-                      <Button onClick={handleSave} disabled={isLoading} className="agro-button">
+                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                      <Button onClick={handleSave} disabled={isLoading} className="bg-green-600 hover:bg-green-700">
                         {isLoading ? (
                           <>
                             <LoadingSpinner size="sm" className="mr-2" />
@@ -207,13 +246,13 @@ export default function FarmerProfilePage() {
               </Card>
 
               {/* Farming Information */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Farming Information</CardTitle>
                   <CardDescription>Details about your farming experience and specialization</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <Label htmlFor="farmSize">Farm Size</Label>
                       <Input
@@ -221,7 +260,7 @@ export default function FarmerProfilePage() {
                         value={profileData.farmSize}
                         onChange={(e) => setProfileData({ ...profileData, farmSize: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                         placeholder="e.g., 25 hectares"
                       />
                     </div>
@@ -232,7 +271,7 @@ export default function FarmerProfilePage() {
                         value={profileData.farmingExperience}
                         onChange={(e) => setProfileData({ ...profileData, farmingExperience: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                         placeholder="e.g., 15 years"
                       />
                     </div>
@@ -245,7 +284,7 @@ export default function FarmerProfilePage() {
                       value={profileData.specialization}
                       onChange={(e) => setProfileData({ ...profileData, specialization: e.target.value })}
                       disabled={!isEditing}
-                      className="agro-input"
+                      className="mt-1"
                       placeholder="e.g., Crops & Grains, Poultry, Livestock"
                     />
                   </div>
@@ -258,7 +297,7 @@ export default function FarmerProfilePage() {
                       onChange={(e) => setProfileData({ ...profileData, certifications: e.target.value })}
                       disabled={!isEditing}
                       rows={3}
-                      className="agro-input"
+                      className="mt-1"
                       placeholder="List your farming certifications and qualifications..."
                     />
                   </div>
@@ -266,13 +305,13 @@ export default function FarmerProfilePage() {
               </Card>
 
               {/* Banking Information */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Banking Information</CardTitle>
                   <CardDescription>Payment details for receiving funds from investors</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <Label htmlFor="bankName">Bank Name</Label>
                       <Input
@@ -280,7 +319,7 @@ export default function FarmerProfilePage() {
                         value={profileData.bankName}
                         onChange={(e) => setProfileData({ ...profileData, bankName: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -290,7 +329,7 @@ export default function FarmerProfilePage() {
                         value={profileData.bankAccount}
                         onChange={(e) => setProfileData({ ...profileData, bankAccount: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                   </div>
@@ -301,7 +340,7 @@ export default function FarmerProfilePage() {
             {/* Sidebar Information */}
             <div className="space-y-6">
               {/* Account Status */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Account Status</CardTitle>
                 </CardHeader>
@@ -344,7 +383,7 @@ export default function FarmerProfilePage() {
               </Card>
 
               {/* Statistics */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Profile Statistics</CardTitle>
                 </CardHeader>
@@ -369,7 +408,7 @@ export default function FarmerProfilePage() {
               </Card>
 
               {/* KYC Documents */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>KYC Documents</CardTitle>
                   <CardDescription>Upload required documents for verification</CardDescription>
@@ -405,6 +444,8 @@ export default function FarmerProfilePage() {
           </div>
         </div>
       </div>
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,15 +8,23 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { DashboardSidebar } from "@/components/dashboard-sidebar"
+import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { useToast } from "@/lib/hooks/use-toast"
+import { ToastContainer } from "@/components/ui/toast"
 import { Upload, User, Mail, Shield, Camera, Phone, TrendingUp, Target, DollarSign } from "lucide-react"
 import { NIGERIAN_STATES } from "@/lib/constants"
+import { getCurrentUser } from "@/lib/auth"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
 
 export default function InvestorProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const { toasts, toast, removeToast } = useToast()
+  const router = useRouter()
+
   const [profileData, setProfileData] = useState({
     name: "Sarah Johnson",
     email: "sarah.johnson@example.com",
@@ -35,13 +43,35 @@ export default function InvestorProfilePage() {
 
   const [kycStatus] = useState<"pending" | "approved" | "rejected">("approved")
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { user } = await getCurrentUser()
+      if (!user) {
+        router.push("/login")
+        return
+      }
+      setUser(user)
+    }
+    checkAuth()
+  }, [router])
+
   const handleSave = async () => {
     setIsLoading(true)
     try {
       await new Promise((resolve) => setTimeout(resolve, 2000))
       setIsEditing(false)
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been successfully updated.",
+        type: "success",
+      })
     } catch (error) {
       console.error("Failed to update profile:", error)
+      toast({
+        title: "Update Failed",
+        description: "Failed to update profile. Please try again.",
+        type: "error",
+      })
     } finally {
       setIsLoading(false)
     }
@@ -60,31 +90,42 @@ export default function InvestorProfilePage() {
     }
   }
 
+  if (!user) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <CollapsibleSidebar userRole="investor" />
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-      <DashboardSidebar userRole="investor" userName="Sarah Johnson" />
+    <div className="flex min-h-screen bg-gray-50">
+      <CollapsibleSidebar userRole="investor" />
 
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Profile Settings</h1>
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Profile Settings</h1>
             <p className="text-gray-600 mt-1">Manage your investor profile and investment preferences</p>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 md:gap-8">
             {/* Main Profile Information */}
             <div className="xl:col-span-2 space-y-6">
               {/* Basic Information */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                     <div>
                       <CardTitle>Personal Information</CardTitle>
                       <CardDescription>Update your personal details and contact information</CardDescription>
                     </div>
                     {!isEditing && (
-                      <Button onClick={() => setIsEditing(true)} variant="outline">
+                      <Button onClick={() => setIsEditing(true)} variant="outline" size="sm">
                         Edit Profile
                       </Button>
                     )}
@@ -92,9 +133,9 @@ export default function InvestorProfilePage() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Profile Picture */}
-                  <div className="flex items-center space-x-6">
+                  <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
                     <div className="relative">
-                      <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100">
+                      <div className="w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden bg-gray-100">
                         <Image
                           src={profileData.avatar_url || "/placeholder.svg"}
                           alt="Profile"
@@ -109,7 +150,7 @@ export default function InvestorProfilePage() {
                         </button>
                       )}
                     </div>
-                    <div>
+                    <div className="text-center sm:text-left">
                       <h3 className="text-lg font-semibold text-gray-900">{profileData.name}</h3>
                       <p className="text-gray-600">Investor</p>
                       <Badge className={getKycStatusColor(kycStatus)} variant="secondary">
@@ -119,7 +160,7 @@ export default function InvestorProfilePage() {
                   </div>
 
                   {/* Form Fields */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <Label htmlFor="name">Full Name</Label>
                       <Input
@@ -127,7 +168,7 @@ export default function InvestorProfilePage() {
                         value={profileData.name}
                         onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -138,7 +179,7 @@ export default function InvestorProfilePage() {
                         value={profileData.email}
                         onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -148,7 +189,7 @@ export default function InvestorProfilePage() {
                         value={profileData.phone}
                         onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -158,7 +199,7 @@ export default function InvestorProfilePage() {
                         onValueChange={(value) => setProfileData({ ...profileData, location: value })}
                         disabled={!isEditing}
                       >
-                        <SelectTrigger className="agro-input">
+                        <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select state" />
                         </SelectTrigger>
                         <SelectContent>
@@ -177,7 +218,7 @@ export default function InvestorProfilePage() {
                         value={profileData.occupation}
                         onChange={(e) => setProfileData({ ...profileData, occupation: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -187,7 +228,7 @@ export default function InvestorProfilePage() {
                         onValueChange={(value) => setProfileData({ ...profileData, investmentExperience: value })}
                         disabled={!isEditing}
                       >
-                        <SelectTrigger className="agro-input">
+                        <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select experience level" />
                         </SelectTrigger>
                         <SelectContent>
@@ -207,14 +248,14 @@ export default function InvestorProfilePage() {
                       onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                       disabled={!isEditing}
                       rows={4}
-                      className="agro-input"
+                      className="mt-1"
                       placeholder="Tell us about your investment philosophy and interests..."
                     />
                   </div>
 
                   {isEditing && (
-                    <div className="flex space-x-4">
-                      <Button onClick={handleSave} disabled={isLoading} className="agro-button">
+                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                      <Button onClick={handleSave} disabled={isLoading} className="bg-green-600 hover:bg-green-700">
                         {isLoading ? (
                           <>
                             <LoadingSpinner size="sm" className="mr-2" />
@@ -233,13 +274,13 @@ export default function InvestorProfilePage() {
               </Card>
 
               {/* Investment Preferences */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Investment Preferences</CardTitle>
                   <CardDescription>Set your investment goals and risk tolerance</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <Label htmlFor="riskTolerance">Risk Tolerance</Label>
                       <Select
@@ -247,7 +288,7 @@ export default function InvestorProfilePage() {
                         onValueChange={(value) => setProfileData({ ...profileData, riskTolerance: value })}
                         disabled={!isEditing}
                       >
-                        <SelectTrigger className="agro-input">
+                        <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select risk tolerance" />
                         </SelectTrigger>
                         <SelectContent>
@@ -264,7 +305,7 @@ export default function InvestorProfilePage() {
                         value={profileData.preferredSectors}
                         onChange={(e) => setProfileData({ ...profileData, preferredSectors: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                         placeholder="e.g., Crops, Poultry, Processing"
                       />
                     </div>
@@ -278,7 +319,7 @@ export default function InvestorProfilePage() {
                       onChange={(e) => setProfileData({ ...profileData, investmentGoals: e.target.value })}
                       disabled={!isEditing}
                       rows={3}
-                      className="agro-input"
+                      className="mt-1"
                       placeholder="Describe your investment objectives and timeline..."
                     />
                   </div>
@@ -286,13 +327,13 @@ export default function InvestorProfilePage() {
               </Card>
 
               {/* Banking Information */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Banking Information</CardTitle>
                   <CardDescription>Payment details for investments and returns</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <Label htmlFor="bankName">Bank Name</Label>
                       <Input
@@ -300,7 +341,7 @@ export default function InvestorProfilePage() {
                         value={profileData.bankName}
                         onChange={(e) => setProfileData({ ...profileData, bankName: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                     <div>
@@ -310,7 +351,7 @@ export default function InvestorProfilePage() {
                         value={profileData.bankAccount}
                         onChange={(e) => setProfileData({ ...profileData, bankAccount: e.target.value })}
                         disabled={!isEditing}
-                        className="agro-input"
+                        className="mt-1"
                       />
                     </div>
                   </div>
@@ -321,7 +362,7 @@ export default function InvestorProfilePage() {
             {/* Sidebar Information */}
             <div className="space-y-6">
               {/* Account Status */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Account Status</CardTitle>
                 </CardHeader>
@@ -364,7 +405,7 @@ export default function InvestorProfilePage() {
               </Card>
 
               {/* Investment Statistics */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Investment Statistics</CardTitle>
                 </CardHeader>
@@ -389,7 +430,7 @@ export default function InvestorProfilePage() {
               </Card>
 
               {/* Portfolio Performance */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>Portfolio Performance</CardTitle>
                 </CardHeader>
@@ -419,7 +460,7 @@ export default function InvestorProfilePage() {
               </Card>
 
               {/* KYC Documents */}
-              <Card className="agro-card">
+              <Card>
                 <CardHeader>
                   <CardTitle>KYC Documents</CardTitle>
                   <CardDescription>Upload required documents for verification</CardDescription>
@@ -455,6 +496,8 @@ export default function InvestorProfilePage() {
           </div>
         </div>
       </div>
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   )
 }

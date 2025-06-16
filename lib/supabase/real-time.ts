@@ -1,29 +1,54 @@
 "use client"
 
-import { supabase } from "./client"
 import { useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
+import type { Database } from "@/lib/supabase/types"
+
+type Project = Database["public"]["Tables"]["projects"]["Row"] & {
+  users?: Database["public"]["Tables"]["users"]["Row"]
+}
+
+type Investment = Database["public"]["Tables"]["investments"]["Row"] & {
+  projects?: Project
+}
 
 export function useRealTimeProjects() {
-  const [projects, setProjects] = useState<any[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Initial fetch
+    const supabase = createClient()
+
     const fetchProjects = async () => {
       try {
-        const { data, error } = await supabase
+        setLoading(true)
+        setError(null)
+
+        // Fetch projects with user information using explicit join
+        const { data, error: fetchError } = await supabase
           .from("projects")
           .select(`
             *,
-            users!projects_farmer_id_fkey(name, location)
+            users!projects_farmer_id_fkey (
+              id,
+              name,
+              email
+            )
           `)
+          .eq("status", "active")
           .order("created_at", { ascending: false })
 
-        if (error) throw error
+        if (fetchError) {
+          console.error("Error fetching projects:", fetchError)
+          setError(fetchError.message)
+          return
+        }
+
         setProjects(data || [])
-      } catch (err: any) {
-        setError(err.message)
+      } catch (err) {
+        console.error("Unexpected error:", err)
+        setError("Failed to load projects")
       } finally {
         setLoading(false)
       }
@@ -32,53 +57,74 @@ export function useRealTimeProjects() {
     fetchProjects()
 
     // Set up real-time subscription
-    const subscription = supabase
-      .channel("projects_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, (payload) => {
-        if (payload.eventType === "INSERT") {
-          setProjects((prev) => [payload.new as any, ...prev])
-        } else if (payload.eventType === "UPDATE") {
-          setProjects((prev) => prev.map((p) => (p.id === payload.new.id ? { ...p, ...payload.new } : p)))
-        } else if (payload.eventType === "DELETE") {
-          setProjects((prev) => prev.filter((p) => p.id !== payload.old.id))
-        }
-      })
+    const channel = supabase
+      .channel("projects-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "projects",
+        },
+        () => {
+          fetchProjects()
+        },
+      )
       .subscribe()
 
     return () => {
-      subscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
   }, [])
 
-  return { projects, loading, error, refetch: () => setLoading(true) }
+  return { projects, loading, error }
 }
 
-export function useRealTimeInvestments(investorId: string) {
-  const [investments, setInvestments] = useState<any[]>([])
+export function useRealTimeInvestments(userId: string) {
+  const [investments, setInvestments] = useState<Investment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!investorId) return
+    if (!userId) {
+      setLoading(false)
+      return
+    }
+
+    const supabase = createClient()
 
     const fetchInvestments = async () => {
       try {
-        const { data, error } = await supabase
+        setLoading(true)
+        setError(null)
+
+        // Fetch investments with project and user information
+        const { data, error: fetchError } = await supabase
           .from("investments")
           .select(`
             *,
-            projects(
+            projects!investments_project_id_fkey (
               *,
-              users!projects_farmer_id_fkey(name)
+              users!projects_farmer_id_fkey (
+                id,
+                name,
+                email
+              )
             )
           `)
-          .eq("investor_id", investorId)
+          .eq("investor_id", userId)
           .order("created_at", { ascending: false })
 
-        if (error) throw error
+        if (fetchError) {
+          console.error("Error fetching investments:", fetchError)
+          setError(fetchError.message)
+          return
+        }
+
         setInvestments(data || [])
-      } catch (err: any) {
-        setError(err.message)
+      } catch (err) {
+        console.error("Unexpected error:", err)
+        setError("Failed to load investments")
       } finally {
         setLoading(false)
       }
@@ -86,31 +132,93 @@ export function useRealTimeInvestments(investorId: string) {
 
     fetchInvestments()
 
-    // Real-time subscription
-    const subscription = supabase
-      .channel("investments_changes")
+    // Set up real-time subscription
+    const channel = supabase
+      .channel("investments-changes")
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "investments",
-          filter: `investor_id=eq.${investorId}`,
+          filter: `investor_id=eq.${userId}`,
         },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            fetchInvestments() // Refetch to get project details
-          } else if (payload.eventType === "UPDATE") {
-            setInvestments((prev) => prev.map((inv) => (inv.id === payload.new.id ? { ...inv, ...payload.new } : inv)))
-          }
+        () => {
+          fetchInvestments()
         },
       )
       .subscribe()
 
     return () => {
-      subscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
-  }, [investorId])
+  }, [userId])
 
   return { investments, loading, error }
+}
+
+export function useRealTimeFarmerProjects(farmerId: string) {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!farmerId) {
+      setLoading(false)
+      return
+    }
+
+    const supabase = createClient()
+
+    const fetchProjects = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const { data, error: fetchError } = await supabase
+          .from("projects")
+          .select("*")
+          .eq("farmer_id", farmerId)
+          .order("created_at", { ascending: false })
+
+        if (fetchError) {
+          console.error("Error fetching farmer projects:", fetchError)
+          setError(fetchError.message)
+          return
+        }
+
+        setProjects(data || [])
+      } catch (err) {
+        console.error("Unexpected error:", err)
+        setError("Failed to load projects")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProjects()
+
+    // Set up real-time subscription
+    const channel = supabase
+      .channel("farmer-projects-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "projects",
+          filter: `farmer_id=eq.${farmerId}`,
+        },
+        () => {
+          fetchProjects()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [farmerId])
+
+  return { projects, loading, error }
 }
