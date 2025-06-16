@@ -1,217 +1,165 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
-import { AuthGuard } from "@/components/auth-guard"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { TrendingUp, DollarSign, Target, Users, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { Plus, DollarSign, Users, TrendingUp, Leaf } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
-import { getProjects } from "@/lib/api/projects"
-import Image from "next/image"
 
 export default function FarmerDashboard() {
   const [user, setUser] = useState<any>(null)
-  const [projects, setProjects] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [stats, setStats] = useState({
-    totalFundsRaised: 0,
-    activeProjects: 0,
-    successRate: 0,
-    totalInvestors: 0,
-  })
+  const router = useRouter()
 
   useEffect(() => {
-    const loadDashboardData = async () => {
-      try {
-        const { user } = await getCurrentUser()
-        if (!user) return
+    const checkAuth = async () => {
+      const { user, error } = await getCurrentUser()
 
-        setUser(user)
-
-        // Load farmer's projects
-        const { data: projectsData } = await getProjects({ farmer_id: user.id })
-        if (projectsData) {
-          setProjects(projectsData)
-
-          // Calculate stats
-          const totalRaised = projectsData.reduce((sum, p) => sum + p.amount_raised, 0)
-          const activeCount = projectsData.filter((p) => p.status === "active").length
-          const completedCount = projectsData.filter((p) => p.status === "completed").length
-          const successRate = projectsData.length > 0 ? (completedCount / projectsData.length) * 100 : 0
-
-          setStats({
-            totalFundsRaised: totalRaised,
-            activeProjects: activeCount,
-            successRate: Math.round(successRate),
-            totalInvestors: Math.floor(Math.random() * 200) + 50, // Mock data for now
-          })
-        }
-      } catch (error) {
-        console.error("Error loading dashboard data:", error)
-      } finally {
-        setIsLoading(false)
+      if (!user) {
+        router.push("/login")
+        return
       }
+
+      setUser(user)
+      setIsLoading(false)
     }
 
-    loadDashboardData()
-  }, [])
+    checkAuth()
+  }, [router])
 
   if (isLoading) {
     return (
-      <AuthGuard requiredRole="farmer">
-        <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-          <CollapsibleSidebar userRole="farmer" />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <LoadingSpinner size="lg" />
-              <p className="mt-4 text-gray-600">Loading your dashboard...</p>
-            </div>
-          </div>
-        </div>
-      </AuthGuard>
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
     )
   }
 
   return (
-    <AuthGuard requiredRole="farmer">
-      <div className="flex h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-        <CollapsibleSidebar userRole="farmer" />
+    <div className="flex min-h-screen bg-gray-50">
+      <CollapsibleSidebar userRole="farmer" />
 
-        <div className="flex-1 overflow-auto">
-          <div className="p-8">
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900">Welcome back, {user?.name || "Farmer"}!</h1>
-              <p className="text-gray-600">Here's an overview of your farming projects and performance</p>
-            </div>
+      <div className="flex-1 p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">
+              Welcome back, {user?.user_metadata?.name || user?.email}!
+            </h1>
+            <p className="text-gray-600 mt-2">Manage your agricultural projects and track your progress</p>
+          </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <Card className="agro-card">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Funds Raised</CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">₦{stats.totalFundsRaised.toLocaleString()}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {stats.totalFundsRaised > 0 ? "+12% from last month" : "Start your first project"}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="agro-card">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.activeProjects}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {projects.filter((p) => p.status === "funded").length} fully funded
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="agro-card">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.successRate}%</div>
-                  <p className="text-xs text-muted-foreground">
-                    {stats.successRate >= 80 ? "Excellent performance" : "Keep improving"}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="agro-card">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Investors</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.totalInvestors}</div>
-                  <p className="text-xs text-muted-foreground">+8 this week</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Recent Projects */}
-            <Card className="agro-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Recent Projects</CardTitle>
-                    <CardDescription>Your latest farming projects and their status</CardDescription>
-                  </div>
-                  <Link href="/dashboard/farmer/create-project">
-                    <Button className="agro-button">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Project
-                    </Button>
-                  </Link>
-                </div>
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+                <Leaf className="h-4 w-4 text-green-600" />
               </CardHeader>
               <CardContent>
-                {projects.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Plus className="w-8 h-8 text-green-600" />
+                <div className="text-2xl font-bold">3</div>
+                <p className="text-xs text-muted-foreground">+1 from last month</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Raised</CardTitle>
+                <DollarSign className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₦2,450,000</div>
+                <p className="text-xs text-muted-foreground">+20.1% from last month</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Investors</CardTitle>
+                <Users className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">24</div>
+                <p className="text-xs text-muted-foreground">+3 new this week</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">85%</div>
+                <p className="text-xs text-muted-foreground">+5% from last month</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+                <CardDescription>Get started with your farming projects</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Link href="/dashboard/farmer/create-project">
+                  <Button className="w-full bg-green-600 hover:bg-green-700">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create New Project
+                  </Button>
+                </Link>
+                <Link href="/dashboard/farmer/my-projects">
+                  <Button variant="outline" className="w-full">
+                    View My Projects
+                  </Button>
+                </Link>
+                <Link href="/dashboard/farmer/profile">
+                  <Button variant="outline" className="w-full">
+                    Complete Profile
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Activity</CardTitle>
+                <CardDescription>Your latest project updates</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">New investment received</p>
+                      <p className="text-xs text-gray-500">₦50,000 for Rice Farming Project</p>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No projects yet</h3>
-                    <p className="text-gray-600 mb-6">Create your first farming project to start raising funds</p>
-                    <Link href="/dashboard/farmer/create-project">
-                      <Button className="agro-button">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Create Your First Project
-                      </Button>
-                    </Link>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {projects.slice(0, 3).map((project, index) => (
-                      <div
-                        key={project.id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-center space-x-4">
-                          <div className="relative w-16 h-16 rounded-lg overflow-hidden">
-                            <Image
-                              src={project.image_url || "/images/rice-farming.png"}
-                              alt={project.title}
-                              fill
-                              className="object-cover"
-                            />
-                          </div>
-                          <div>
-                            <h3 className="font-medium text-gray-900">{project.title}</h3>
-                            <p className="text-sm text-gray-600 capitalize">{project.status}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold">₦{project.amount_raised.toLocaleString()}</p>
-                          <p className="text-sm text-gray-600">of ₦{project.funding_goal.toLocaleString()}</p>
-                        </div>
-                      </div>
-                    ))}
-                    {projects.length > 3 && (
-                      <div className="text-center pt-4">
-                        <Link href="/dashboard/farmer/my-projects">
-                          <Button variant="outline">View All Projects</Button>
-                        </Link>
-                      </div>
-                    )}
+                  <div className="flex items-center space-x-4">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Project milestone reached</p>
+                      <p className="text-xs text-gray-500">Poultry Farm - 50% complete</p>
+                    </div>
                   </div>
-                )}
+                  <div className="flex items-center space-x-4">
+                    <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">KYC verification pending</p>
+                      <p className="text-xs text-gray-500">Complete your verification</p>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
-    </AuthGuard>
+    </div>
   )
 }

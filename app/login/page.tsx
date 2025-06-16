@@ -2,154 +2,79 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Leaf, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react"
+import { Leaf, AlertCircle, CheckCircle } from "lucide-react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
-import { signIn, isAuthenticated } from "@/lib/auth"
-import { signInSchema, type SignInInput } from "@/lib/validations"
+import { useRouter } from "next/navigation"
+import { signIn } from "@/lib/auth"
 
 export default function LoginPage() {
-  const [formData, setFormData] = useState<SignInInput>({
+  const [formData, setFormData] = useState({
     email: "",
     password: "",
   })
-  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [fieldErrors, setFieldErrors] = useState<Partial<SignInInput>>({})
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
   const router = useRouter()
-  const searchParams = useSearchParams()
-
-  // Check if user is already logged in
-  useEffect(() => {
-    const checkExistingAuth = async () => {
-      try {
-        setIsCheckingAuth(true)
-        const authenticated = await isAuthenticated()
-
-        if (authenticated) {
-          // User is already logged in, redirect to dashboard
-          const redirectTo = searchParams.get("redirect") || "/dashboard/investor"
-          router.push(redirectTo)
-          return
-        }
-      } catch (error) {
-        console.error("Auth check error:", error)
-        // Continue with login flow if auth check fails
-      } finally {
-        setIsCheckingAuth(false)
-      }
-    }
-
-    checkExistingAuth()
-  }, [router, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
-    setSuccess(null)
-    setFieldErrors({})
+    setError("")
+    setSuccess("")
+    setIsLoading(true)
 
-    // Validate form data
-    const validation = signInSchema.safeParse(formData)
-    if (!validation.success) {
-      const errors: Partial<SignInInput> = {}
-      validation.error.errors.forEach((error) => {
-        if (error.path[0]) {
-          errors[error.path[0] as keyof SignInInput] = error.message
-        }
-      })
-      setFieldErrors(errors)
+    const { data, error } = await signIn(formData.email, formData.password)
+
+    if (error) {
+      setError(error.message)
+      setIsLoading(false)
       return
     }
 
-    setIsLoading(true)
+    if (data?.user) {
+      setSuccess("Login successful! Redirecting...")
 
-    try {
-      const { data, error } = await signIn(formData)
+      // Get user role from metadata
+      const userRole = data.user.user_metadata?.role || "investor"
 
-      if (error) {
-        setError(error.message || "Invalid email or password")
-        return
-      }
-
-      if (data?.user) {
-        setSuccess("Login successful! Redirecting to your dashboard...")
-
-        // Get the redirect URL from search params or determine based on role
-        const redirectTo = searchParams.get("redirect")
-        const userRole = data.user.user_metadata?.role || data.user.role || "investor"
-
-        setTimeout(() => {
-          if (redirectTo) {
-            router.push(redirectTo)
-          } else {
-            // Redirect based on role
-            if (userRole === "farmer") {
-              router.push("/dashboard/farmer")
-            } else if (userRole === "admin") {
-              router.push("/dashboard/admin")
-            } else {
-              router.push("/dashboard/investor")
-            }
-          }
-        }, 1000)
-      }
-    } catch (err: any) {
-      console.error("Login error:", err)
-      setError(err.message || "An unexpected error occurred. Please try again.")
-    } finally {
-      setIsLoading(false)
+      setTimeout(() => {
+        if (userRole === "farmer") {
+          router.push("/dashboard/farmer")
+        } else if (userRole === "admin") {
+          router.push("/dashboard/admin")
+        } else {
+          router.push("/dashboard/investor")
+        }
+      }, 1000)
     }
+
+    setIsLoading(false)
   }
 
-  const handleInputChange = (field: keyof SignInInput, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    // Clear field error when user starts typing
-    if (fieldErrors[field]) {
-      setFieldErrors((prev) => ({ ...prev, [field]: undefined }))
-    }
-  }
-
-  const handleDemoLogin = async (role: "farmer" | "investor" | "admin") => {
+  const handleDemoLogin = async (role: string) => {
     const demoCredentials = {
       farmer: { email: "farmer@demo.com", password: "password123" },
       investor: { email: "investor@demo.com", password: "password123" },
       admin: { email: "admin@demo.com", password: "password123" },
     }
 
-    setFormData(demoCredentials[role])
+    const creds = demoCredentials[role as keyof typeof demoCredentials]
+    setFormData(creds)
 
-    // Auto-submit after setting demo credentials
     setTimeout(() => {
-      const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-      handleSubmit(fakeEvent)
+      handleSubmit({ preventDefault: () => {} } as React.FormEvent)
     }, 100)
   }
 
-  // Show loading spinner while checking authentication
-  if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center">
-        <div className="text-center">
-          <LoadingSpinner size="lg" />
-          <p className="mt-4 text-gray-600">Checking authentication...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center space-x-2">
@@ -160,17 +85,17 @@ export default function LoginPage() {
               AgroInvest
             </span>
           </Link>
-          <h2 className="mt-6 text-3xl font-bold text-gray-900">Welcome back</h2>
-          <p className="mt-2 text-gray-600">Sign in to your account to continue</p>
+          <h2 className="mt-6 text-3xl font-bold text-gray-900">Welcome Back</h2>
+          <p className="mt-2 text-gray-600">Sign in to your account</p>
         </div>
 
-        <Card className="agro-card">
+        <Card>
           <CardHeader>
             <CardTitle>Sign In</CardTitle>
             <CardDescription>Enter your credentials to access your account</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
@@ -186,52 +111,32 @@ export default function LoginPage() {
               )}
 
               <div>
-                <Label htmlFor="email">Email Address</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
                   value={formData.email}
-                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="Enter your email"
-                  className={`agro-input ${fieldErrors.email ? "border-red-500" : ""}`}
+                  required
                   disabled={isLoading}
-                  autoComplete="email"
                 />
-                {fieldErrors.email && <p className="text-sm text-red-600 mt-1">{fieldErrors.email}</p>}
               </div>
 
               <div>
                 <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={(e) => handleInputChange("password", e.target.value)}
-                    placeholder="Enter your password"
-                    className={`agro-input pr-10 ${fieldErrors.password ? "border-red-500" : ""}`}
-                    disabled={isLoading}
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    disabled={isLoading}
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {fieldErrors.password && <p className="text-sm text-red-600 mt-1">{fieldErrors.password}</p>}
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Enter your password"
+                  required
+                  disabled={isLoading}
+                />
               </div>
 
-              <div className="flex items-center justify-between">
-                <Link href="/forgot-password" className="text-sm text-green-600 hover:text-green-500 font-medium">
-                  Forgot your password?
-                </Link>
-              </div>
-
-              <Button type="submit" className="w-full agro-button" disabled={isLoading}>
+              <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={isLoading}>
                 {isLoading ? (
                   <>
                     <LoadingSpinner size="sm" className="mr-2" />
@@ -252,7 +157,7 @@ export default function LoginPage() {
               </p>
             </div>
 
-            {/* Demo accounts info */}
+            {/* Demo accounts */}
             <div className="mt-6 p-4 bg-blue-50 rounded-lg">
               <p className="text-sm font-medium text-blue-900 mb-3">Try Demo Accounts:</p>
               <div className="space-y-2">
@@ -264,7 +169,7 @@ export default function LoginPage() {
                   onClick={() => handleDemoLogin("farmer")}
                   disabled={isLoading}
                 >
-                  Demo Farmer Account
+                  Demo Farmer
                 </Button>
                 <Button
                   type="button"
@@ -274,7 +179,7 @@ export default function LoginPage() {
                   onClick={() => handleDemoLogin("investor")}
                   disabled={isLoading}
                 >
-                  Demo Investor Account
+                  Demo Investor
                 </Button>
                 <Button
                   type="button"
@@ -284,7 +189,7 @@ export default function LoginPage() {
                   onClick={() => handleDemoLogin("admin")}
                   disabled={isLoading}
                 >
-                  Demo Admin Account
+                  Demo Admin
                 </Button>
               </div>
             </div>
