@@ -2,83 +2,61 @@
 
 import { useState } from "react"
 import { supabase } from "@/lib/supabase/client"
+import { useToast } from "@/lib/hooks/use-toast"
 
 export function useUpload() {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const { toast } = useToast()
 
-  const uploadFile = async (
-    file: File,
-    bucket: string,
-    path: string,
-    options?: {
-      onProgress?: (progress: number) => void
-      upsert?: boolean
-    },
-  ) => {
-    setUploading(true)
-    setProgress(0)
-
+  const uploadFile = async (file: File, bucket: string, path: string): Promise<string | null> => {
     try {
-      const fileExt = file.name.split(".").pop()
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-      const filePath = `${path}/${fileName}`
+      setUploading(true)
+      setProgress(0)
 
       // Simulate progress for better UX
       const progressInterval = setInterval(() => {
-        setProgress((prev) => {
-          const newProgress = Math.min(prev + 10, 90)
-          options?.onProgress?.(newProgress)
-          return newProgress
-        })
+        setProgress((prev) => Math.min(prev + 10, 90))
       }, 100)
 
-      const { data, error } = await supabase.storage.from(bucket).upload(filePath, file, {
-        upsert: options?.upsert || false,
+      const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+        cacheControl: "3600",
+        upsert: true,
       })
 
       clearInterval(progressInterval)
-
-      if (error) throw error
-
       setProgress(100)
-      options?.onProgress?.(100)
+
+      if (error) {
+        toast({
+          title: "Upload failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return null
+      }
 
       // Get public URL
-      const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath)
+      const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path)
 
-      return {
-        data: {
-          ...data,
-          publicUrl: urlData.publicUrl,
-        },
-        error: null,
-      }
-    } catch (error: any) {
-      return {
-        data: null,
-        error: error.message,
-      }
+      toast({
+        title: "Upload successful",
+        description: "File uploaded successfully",
+      })
+
+      return urlData.publicUrl
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      })
+      return null
     } finally {
       setUploading(false)
       setTimeout(() => setProgress(0), 1000)
     }
   }
 
-  const deleteFile = async (bucket: string, path: string) => {
-    try {
-      const { error } = await supabase.storage.from(bucket).remove([path])
-
-      return { error: error?.message || null }
-    } catch (error: any) {
-      return { error: error.message }
-    }
-  }
-
-  return {
-    uploadFile,
-    deleteFile,
-    uploading,
-    progress,
-  }
+  return { uploadFile, uploading, progress }
 }

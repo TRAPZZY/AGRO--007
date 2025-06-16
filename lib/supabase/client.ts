@@ -1,9 +1,11 @@
 import { createClient } from "@supabase/supabase-js"
+import type { Database } from "./types"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://demo.supabase.co"
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "demo-key"
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Create and export the main supabase client
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -14,6 +16,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
   },
 })
+
+// Export the createClient function for compatibility
+export { createClient }
 
 // Helper function to handle Supabase errors
 export const handleSupabaseError = (error: any) => {

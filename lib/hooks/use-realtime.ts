@@ -9,71 +9,61 @@ export function useRealtime<T>(table: string, initialData: T[] = [], filter?: st
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    let subscription: any
+    let channel: any
 
-    const setupSubscription = async () => {
+    const setupRealtime = async () => {
       try {
         // Initial fetch
         let query = supabase.from(table).select("*")
 
         if (filter) {
-          const [column, operator, value] = filter.split(".")
-          query = query.eq(column, value)
+          query = query.eq(...filter.split("="))
         }
 
-        const { data: initialData, error: fetchError } = await query
+        const { data: fetchedData, error: fetchError } = await query
 
-        if (fetchError) throw fetchError
-
-        setData(initialData || [])
-        setError(null)
-
-        // Set up real-time subscription
-        const channel = supabase.channel(`${table}_realtime`)
-
-        const subscriptionConfig: any = {
-          event: "*",
-          schema: "public",
-          table,
+        if (fetchError) {
+          setError(fetchError.message)
+        } else {
+          setData(fetchedData || [])
         }
-
-        if (filter) {
-          subscriptionConfig.filter = filter
-        }
-
-        channel.on("postgres_changes", subscriptionConfig, (payload) => {
-          const { eventType, new: newRecord, old: oldRecord } = payload
-
-          setData((current) => {
-            switch (eventType) {
-              case "INSERT":
-                return [...current, newRecord as T]
-              case "UPDATE":
-                return current.map((item) => ((item as any).id === newRecord.id ? (newRecord as T) : item))
-              case "DELETE":
-                return current.filter((item) => (item as any).id !== oldRecord.id)
-              default:
-                return current
-            }
-          })
-        })
-
-        subscription = channel.subscribe()
-      } catch (err: any) {
-        setError(err.message)
+      } catch (err) {
+        setError("Failed to fetch data")
       } finally {
         setLoading(false)
       }
+
+      // Setup real-time subscription
+      channel = supabase
+        .channel(`${table}_changes`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table,
+          },
+          (payload) => {
+            if (payload.eventType === "INSERT") {
+              setData((current) => [...current, payload.new as T])
+            } else if (payload.eventType === "UPDATE") {
+              setData((current) => current.map((item: any) => (item.id === payload.new.id ? payload.new : item)))
+            } else if (payload.eventType === "DELETE") {
+              setData((current) => current.filter((item: any) => item.id !== payload.old.id))
+            }
+          },
+        )
+        .subscribe()
     }
 
-    setupSubscription()
+    setupRealtime()
 
     return () => {
-      if (subscription) {
-        supabase.removeChannel(subscription)
+      if (channel) {
+        supabase.removeChannel(channel)
       }
     }
   }, [table, filter])
 
-  return { data, loading, error, setData }
+  return { data, loading, error, refetch: () => setLoading(true) }
 }
