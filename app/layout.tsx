@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
+import { ChunkErrorBoundary } from "@/components/chunk-error-boundary"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -28,7 +29,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">{children}</div>
+        <ChunkErrorBoundary>
+          <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">{children}</div>
+        </ChunkErrorBoundary>
       </body>
     </html>
   )

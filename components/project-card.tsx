@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import Image from "next/image"
+import { useState } from "react"
 
 interface ProjectCardProps {
   id?: string
@@ -43,6 +44,8 @@ export function ProjectCard({
   expected_return = 0,
   risk_level = "medium",
 }: ProjectCardProps) {
+  const [imageError, setImageError] = useState(false)
+
   // Normalize prop names and provide defaults
   const projectId = id || ""
   const projectTitle = title || "Untitled Project"
@@ -65,19 +68,32 @@ export function ProjectCard({
     }
   }
 
+  const handleImageError = () => {
+    setImageError(true)
+  }
+
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-      <div className="relative h-48">
-        <Image
-          src={projectImage || "/placeholder.svg"}
-          alt={projectTitle}
-          fill
-          className="object-cover"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement
-            target.src = "/placeholder.svg?height=200&width=300"
-          }}
-        />
+      <div className="relative h-48 bg-gray-100">
+        {!imageError ? (
+          <Image
+            src={projectImage || "/placeholder.svg"}
+            alt={projectTitle}
+            fill
+            className="object-cover"
+            onError={handleImageError}
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+            <div className="text-center text-gray-500">
+              <div className="w-16 h-16 bg-gray-300 rounded-full mx-auto mb-2 flex items-center justify-center">
+                <span className="text-2xl">🌾</span>
+              </div>
+              <p className="text-sm">Project Image</p>
+            </div>
+          </div>
+        )}
         <Badge className="absolute top-2 right-2 bg-green-600 text-white">
           {projectCategory.charAt(0).toUpperCase() + projectCategory.slice(1)}
         </Badge>
