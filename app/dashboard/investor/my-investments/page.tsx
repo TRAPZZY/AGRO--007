@@ -16,17 +16,19 @@ interface Investment {
   created_at: string
   status: string
   expected_return: number
-  project: {
+  project_id: string
+  projects?: {
     id: string
     title: string
     description: string
     category: string
     funding_goal: number
-    current_funding: number
+    amount_raised: number
     status: string
-    expected_roi: number
-    duration_months: number
-  }
+    expected_return: number
+    start_date: string | null
+    end_date: string | null
+  } | null
 }
 
 export default function MyInvestmentsPage() {
@@ -74,34 +76,64 @@ export default function MyInvestmentsPage() {
         return
       }
 
-      // Fetch investments with project details
-      const { data, error: fetchError } = await supabase
+      // First, try the explicit join approach
+      let { data, error: fetchError } = await supabase
         .from("investments")
         .select(`
-          *,
-          projects (
-            id,
-            title,
-            description,
-            category,
-            funding_goal,
-            current_funding,
-            status,
-            expected_roi,
-            duration_months
-          )
-        `)
+        id,
+        amount,
+        created_at,
+        status,
+        expected_return,
+        project_id,
+        projects (
+          id,
+          title,
+          description,
+          category,
+          funding_goal,
+          amount_raised,
+          status,
+          expected_return,
+          start_date,
+          end_date
+        )
+      `)
         .eq("investor_id", user.id)
         .order("created_at", { ascending: false })
 
-      if (fetchError) {
-        setError(fetchError.message)
-        toast({
-          title: "Error loading investments",
-          description: fetchError.message,
-          variant: "destructive",
-        })
-        return
+      // If the explicit join fails, try manual join
+      if (fetchError || !data) {
+        console.log("Explicit join failed, trying manual approach:", fetchError)
+
+        // Get investments first
+        const { data: investmentsData, error: invError } = await supabase
+          .from("investments")
+          .select("*")
+          .eq("investor_id", user.id)
+          .order("created_at", { ascending: false })
+
+        if (invError) {
+          throw invError
+        }
+
+        // Get projects separately
+        const projectIds = investmentsData?.map((inv) => inv.project_id) || []
+        const { data: projectsData, error: projError } = await supabase
+          .from("projects")
+          .select("*")
+          .in("id", projectIds)
+
+        if (projError) {
+          throw projError
+        }
+
+        // Manually join the data
+        data =
+          investmentsData?.map((investment) => ({
+            ...investment,
+            projects: projectsData?.find((project) => project.id === investment.project_id) || null,
+          })) || []
       }
 
       const investmentsData = data || []
@@ -115,10 +147,11 @@ export default function MyInvestmentsPage() {
       setExpectedReturns(returns)
       setError(null)
     } catch (err) {
+      console.error("Investment fetch error:", err)
       setError("Failed to load investments")
       toast({
         title: "Error",
-        description: "Failed to load your investments",
+        description: "Failed to load your investments. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -208,8 +241,10 @@ export default function MyInvestmentsPage() {
               <CardHeader>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <div>
-                    <CardTitle className="text-xl">{investment.project?.title}</CardTitle>
-                    <p className="text-muted-foreground mt-1">{investment.project?.description}</p>
+                    <CardTitle className="text-xl">{investment.projects?.title || "Project Title"}</CardTitle>
+                    <p className="text-muted-foreground mt-1">
+                      {investment.projects?.description || "Project description"}
+                    </p>
                   </div>
                   <Badge variant={investment.status === "active" ? "default" : "secondary"}>{investment.status}</Badge>
                 </div>
@@ -234,7 +269,7 @@ export default function MyInvestmentsPage() {
                           className="bg-green-600 h-2 rounded-full"
                           style={{
                             width: `${Math.min(
-                              ((investment.project?.current_funding || 0) / (investment.project?.funding_goal || 1)) *
+                              ((investment.projects?.amount_raised || 0) / (investment.projects?.funding_goal || 1)) *
                                 100,
                               100,
                             )}%`,
@@ -243,7 +278,7 @@ export default function MyInvestmentsPage() {
                       </div>
                       <span className="text-sm">
                         {Math.round(
-                          ((investment.project?.current_funding || 0) / (investment.project?.funding_goal || 1)) * 100,
+                          ((investment.projects?.amount_raised || 0) / (investment.projects?.funding_goal || 1)) * 100,
                         )}
                         %
                       </span>

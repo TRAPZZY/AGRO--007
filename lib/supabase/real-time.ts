@@ -98,32 +98,46 @@ export function useRealTimeInvestments(userId: string) {
         setLoading(true)
         setError(null)
 
-        // Fetch investments with project and user information
-        const { data, error: fetchError } = await supabase
+        // Try explicit join first
+        let { data, error: fetchError } = await supabase
           .from("investments")
           .select(`
             *,
-            projects!investments_project_id_fkey (
-              *,
-              users!projects_farmer_id_fkey (
-                id,
-                name,
-                email
-              )
-            )
+            projects (*)
           `)
           .eq("investor_id", userId)
           .order("created_at", { ascending: false })
 
-        if (fetchError) {
-          console.error("Error fetching investments:", fetchError)
-          setError(fetchError.message)
-          return
+        // If explicit join fails, use manual join
+        if (fetchError || !data) {
+          console.log("Using manual join approach")
+
+          const { data: investmentsData, error: invError } = await supabase
+            .from("investments")
+            .select("*")
+            .eq("investor_id", userId)
+            .order("created_at", { ascending: false })
+
+          if (invError) throw invError
+
+          const projectIds = investmentsData?.map((inv) => inv.project_id) || []
+          const { data: projectsData, error: projError } = await supabase
+            .from("projects")
+            .select("*")
+            .in("id", projectIds)
+
+          if (projError) throw projError
+
+          data =
+            investmentsData?.map((investment) => ({
+              ...investment,
+              projects: projectsData?.find((project) => project.id === investment.project_id) || null,
+            })) || []
         }
 
         setInvestments(data || [])
       } catch (err) {
-        console.error("Unexpected error:", err)
+        console.error("Error fetching investments:", err)
         setError("Failed to load investments")
       } finally {
         setLoading(false)
@@ -132,7 +146,7 @@ export function useRealTimeInvestments(userId: string) {
 
     fetchInvestments()
 
-    // Set up real-time subscription
+    // Set up real-time subscription with error handling
     const channel = supabase
       .channel("investments-changes")
       .on(
@@ -147,7 +161,13 @@ export function useRealTimeInvestments(userId: string) {
           fetchInvestments()
         },
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("Real-time subscription active")
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("Real-time subscription error")
+        }
+      })
 
     return () => {
       supabase.removeChannel(channel)
