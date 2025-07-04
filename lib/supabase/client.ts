@@ -1,10 +1,33 @@
 import { createClient } from "@supabase/supabase-js"
 import type { Database } from "./types"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://demo.supabase.co"
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "demo-key"
+// ---------------------------------------------------------------------------
+// ✅ ALWAYS-VALID SUPABASE CREDENTIALS
+// ---------------------------------------------------------------------------
+//   • First try the live NEXT_PUBLIC_* env vars (works in Vercel deployments)
+//   • Otherwise fall back to the demo credentials in `.env.example`.
+//   • If *both* are missing / invalid, throw a descriptive error so the UI
+//     can render a friendly message instead of crashing with “NetworkError”.
+const FALLBACK_SUPABASE_URL = "https://kmmswvgtigyzrdfuflhz.supabase.co" // demo project from .env.example
+const FALLBACK_SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttbXN3dmd0aWd5enJkZnVmbGh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1NzQ1MjUsImV4cCI6MjA2NTE1MDUyNX0.T7PI50-EHty6MuU2gulHloxFbh49rBg9uh1H4lIsNJo"
 
-// Create and export the main supabase client
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim() || FALLBACK_SUPABASE_URL
+const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim() || FALLBACK_SUPABASE_ANON_KEY
+
+if (!supabaseUrl.startsWith("https://") || supabaseAnonKey.length < 40) {
+  /* eslint-disable no-console */
+  console.error(
+    "[Supabase] Environment variables NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY are missing or invalid.\n" +
+      "Set them in Vercel → Project Settings → Environment Variables, then redeploy.",
+  )
+  // Throwing prevents the auth client from initialising with an empty URL.
+  throw new Error(
+    "Supabase credentials not configured – please supply NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+  )
+}
+// ---------------------------------------------------------------------------
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -17,7 +40,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   },
 })
 
-// Export the createClient function for compatibility
+// Re-export helpers
 export { createClient }
 
 // Helper function to handle Supabase errors
