@@ -1,253 +1,240 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
-import { ProjectCard } from "@/components/project-card"
+import { useState, useEffect, useMemo } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { ErrorMessage } from "@/components/ui/error-message"
+import { InvestmentModal } from "@/components/investment-modal"
+import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/lib/hooks/use-toast"
 import { ToastContainer } from "@/components/ui/toast"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { getCurrentUser } from "@/lib/auth"
-import { useRouter } from "next/navigation"
-import { Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
-import { supabase } from "@/lib/supabase/client"
+import {
+  Search,
+  Filter,
+  MapPin,
+  Target,
+  TrendingUp,
+  Calendar,
+  Users,
+  Leaf,
+  Shield,
+  Star,
+  RefreshCw,
+} from "lucide-react"
 
-// Simple Investment Modal Component (inline to avoid chunk loading issues)
-function SimpleInvestmentModal({
-  isOpen,
-  onClose,
-  project,
-}: {
-  isOpen: boolean
-  onClose: () => void
-  project: any
-}) {
-  const [amount, setAmount] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const { toast } = useToast()
-
-  if (!isOpen || !project) return null
-
-  const handleInvest = async () => {
-    if (!amount || Number(amount) < 1000) {
-      toast({
-        title: "Invalid Amount",
-        description: "Minimum investment is ₦1,000",
-        type: "error",
-      })
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      // Simulate investment for now
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      toast({
-        title: "Investment Successful! 🎉",
-        description: `You've invested ₦${Number(amount).toLocaleString()} in ${project.title}`,
-        type: "success",
-      })
-
-      onClose()
-      setAmount("")
-    } catch (error) {
-      toast({
-        title: "Investment Failed",
-        description: "Something went wrong. Please try again.",
-        type: "error",
-      })
-    } finally {
-      setIsLoading(false)
-    }
+interface Project {
+  id: string
+  title: string
+  description: string
+  farmer_id: string
+  category: string
+  location: string
+  funding_goal: number
+  amount_raised: number
+  status: string
+  image_url: string | null
+  start_date: string | null
+  end_date: string | null
+  expected_return: number
+  risk_level: string
+  min_investment: number
+  max_investment: number | null
+  project_duration_months: number | null
+  harvest_season: string | null
+  farming_method: string | null
+  certifications: string[] | null
+  insurance_coverage: boolean
+  weather_protection: boolean
+  created_at: string
+  users?: {
+    name: string
+    avatar_url: string | null
+    kyc_status: string
   }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-bold mb-4">Invest in {project.title}</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Investment Amount (₦)</label>
-            <Input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Enter amount"
-              min="1000"
-            />
-          </div>
-          <div className="flex space-x-3">
-            <Button variant="outline" onClick={onClose} className="flex-1" disabled={isLoading}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleInvest}
-              className="flex-1 bg-green-600 hover:bg-green-700"
-              disabled={isLoading || !amount}
-            >
-              {isLoading ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Processing...
-                </>
-              ) : (
-                "Invest Now"
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export default function BrowseProjectsPage() {
-  const [projects, setProjects] = useState<any[]>([])
-  const [selectedProject, setSelectedProject] = useState<any>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [categoryFilter, setCategoryFilter] = useState("all")
-  const [searchTerm, setSearchTerm] = useState("")
-  const [user, setUser] = useState<any>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const { toasts, toast, removeToast } = useToast()
-  const router = useRouter()
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
+  const [showInvestmentModal, setShowInvestmentModal] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Sample projects data as fallback
-  const sampleProjects = [
-    {
-      id: "1",
-      title: "Organic Rice Farming Project",
-      description:
-        "Sustainable rice farming using organic methods to produce high-quality rice for local and export markets.",
-      image_url: "/images/rice-farming.png",
-      funding_goal: 2500000,
-      amount_raised: 1800000,
-      category: "crops",
-      location: "Kebbi State, Nigeria",
-      expected_return: 18,
-      risk_level: "medium",
-      status: "active",
-    },
-    {
-      id: "2",
-      title: "Modern Poultry Farm Expansion",
-      description:
-        "Expanding poultry operations with modern equipment and facilities to increase egg and meat production.",
-      image_url: "/images/poultry-farm.png",
-      funding_goal: 3000000,
-      amount_raised: 900000,
-      category: "poultry",
-      location: "Ogun State, Nigeria",
-      expected_return: 22,
-      risk_level: "low",
-      status: "active",
-    },
-    {
-      id: "3",
-      title: "Cassava Processing Plant",
-      description:
-        "Setting up a modern cassava processing facility to produce garri, flour, and starch for commercial distribution.",
-      image_url: "/images/cassava-processing.png",
-      funding_goal: 5000000,
-      amount_raised: 2100000,
-      category: "processing",
-      location: "Oyo State, Nigeria",
-      expected_return: 25,
-      risk_level: "medium",
-      status: "active",
-    },
-  ]
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState("all")
+  const [riskFilter, setRiskFilter] = useState("all")
+  const [sortBy, setSortBy] = useState("newest")
+  const [showFilters, setShowFilters] = useState(false)
+
+  const { toast, toasts, removeToast } = useToast()
 
   useEffect(() => {
-    const initializePage = async () => {
-      try {
-        // Check authentication
-        const { user } = await getCurrentUser()
-        if (!user) {
-          router.push("/login")
-          return
-        }
-        setUser(user)
+    fetchProjects()
 
-        // Try to fetch real projects, fallback to sample data
-        try {
-          const { data, error: fetchError } = await supabase.from("projects").select("*").eq("status", "active")
+    // Set up real-time subscription
+    const channel = supabase
+      .channel("projects_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "projects",
+        },
+        (payload) => {
+          console.log("Project change detected:", payload)
+          fetchProjects()
 
-          if (fetchError) {
-            console.warn("Database not available, using sample data:", fetchError)
-            setProjects(sampleProjects)
-          } else {
-            setProjects(data || sampleProjects)
+          if (payload.eventType === "INSERT" && payload.new.status === "active") {
+            toast({
+              title: "New Project Available!",
+              description: `${payload.new.title} is now accepting investments`,
+              type: "success",
+            })
           }
-        } catch (dbError) {
-          console.warn("Database connection failed, using sample data:", dbError)
-          setProjects(sampleProjects)
-        }
+        },
+      )
+      .subscribe()
 
-        setError(null)
-      } catch (err: any) {
-        console.error("Page initialization error:", err)
-        setError(err.message || "Failed to load page")
-      } finally {
-        setLoading(false)
-        setIsInitialized(true)
-      }
+    return () => {
+      supabase.removeChannel(channel)
     }
+  }, [])
 
-    initializePage()
-  }, [router])
+  const fetchProjects = async (showRefreshing = false) => {
+    try {
+      if (showRefreshing) setRefreshing(true)
+      else setLoading(true)
 
-  const handleInvest = (projectId: string) => {
-    if (!user) {
+      const { data, error: fetchError } = await supabase
+        .from("projects")
+        .select(`
+          *,
+          users!projects_farmer_id_fkey (
+            name,
+            avatar_url,
+            kyc_status
+          )
+        `)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+
+      if (fetchError) throw fetchError
+
+      setProjects(data || [])
+      setError(null)
+    } catch (err: any) {
+      console.error("Projects fetch error:", err)
+      setError("Failed to load projects")
       toast({
-        title: "Please Login",
-        description: "You need to be logged in to invest.",
+        title: "Error",
+        description: "Failed to load projects. Please try again.",
         type: "error",
       })
-      return
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  // Filter and sort projects
+  const filteredProjects = useMemo(() => {
+    const filtered = projects.filter((project) => {
+      const matchesSearch =
+        project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        project.location.toLowerCase().includes(searchTerm.toLowerCase())
+
+      const matchesCategory = categoryFilter === "all" || project.category === categoryFilter
+      const matchesRisk = riskFilter === "all" || project.risk_level === riskFilter
+
+      return matchesSearch && matchesCategory && matchesRisk
+    })
+
+    // Sort projects
+    switch (sortBy) {
+      case "newest":
+        filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        break
+      case "oldest":
+        filtered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        break
+      case "funding_goal_high":
+        filtered.sort((a, b) => b.funding_goal - a.funding_goal)
+        break
+      case "funding_goal_low":
+        filtered.sort((a, b) => a.funding_goal - b.funding_goal)
+        break
+      case "return_high":
+        filtered.sort((a, b) => b.expected_return - a.expected_return)
+        break
+      case "return_low":
+        filtered.sort((a, b) => a.expected_return - b.expected_return)
+        break
+      case "progress":
+        filtered.sort((a, b) => b.amount_raised / b.funding_goal - a.amount_raised / a.funding_goal)
+        break
+      default:
+        break
     }
 
-    const project = projects.find((p: any) => p.id === projectId)
-    if (!project) {
-      toast({
-        title: "Project Not Found",
-        description: "The selected project could not be found.",
-        type: "error",
-      })
-      return
-    }
+    return filtered
+  }, [projects, searchTerm, categoryFilter, riskFilter, sortBy])
 
+  const handleInvestClick = (project: Project) => {
     setSelectedProject(project)
-    setIsModalOpen(true)
+    setShowInvestmentModal(true)
   }
 
-  const handleRetry = () => {
-    window.location.reload()
+  const handleInvestmentSuccess = () => {
+    fetchProjects(true)
+    toast({
+      title: "Investment Successful!",
+      description: "Your investment has been submitted successfully",
+      type: "success",
+    })
   }
 
-  const filteredProjects = projects.filter((project: any) => {
-    const matchesCategory = categoryFilter === "all" || project.category === categoryFilter
-    const matchesSearch =
-      project.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    const isActive = project.status === "active"
-    const hasRemainingFunding = (project.amount_raised || 0) < (project.funding_goal || 0)
+  const getRiskColor = (risk: string) => {
+    switch (risk) {
+      case "low":
+        return "bg-green-100 text-green-800"
+      case "medium":
+        return "bg-yellow-100 text-yellow-800"
+      case "high":
+        return "bg-red-100 text-red-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
 
-    return matchesCategory && matchesSearch && isActive && hasRemainingFunding
-  })
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case "crops":
+        return <Leaf className="w-4 h-4" />
+      case "poultry":
+        return <Users className="w-4 h-4" />
+      case "livestock":
+        return <Users className="w-4 h-4" />
+      case "processing":
+        return <Target className="w-4 h-4" />
+      case "equipment":
+        return <Shield className="w-4 h-4" />
+      default:
+        return <Leaf className="w-4 h-4" />
+    }
+  }
 
-  if (loading || !isInitialized) {
+  if (loading) {
     return (
-      <div className="flex min-h-screen bg-gray-50">
-        <CollapsibleSidebar userRole="investor" />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <LoadingSpinner size="lg" />
             <p className="mt-4 text-gray-600">Loading investment opportunities...</p>
@@ -259,126 +246,306 @@ export default function BrowseProjectsPage() {
 
   if (error) {
     return (
-      <div className="flex min-h-screen bg-gray-50">
-        <CollapsibleSidebar userRole="investor" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center max-w-md">
-            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Something went wrong</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <Button onClick={handleRetry} className="bg-green-600 hover:bg-green-700">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Try Again
-            </Button>
-          </div>
-        </div>
+      <div className="container mx-auto p-6">
+        <ErrorMessage message={error} onRetry={() => fetchProjects()} />
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <CollapsibleSidebar userRole="investor" />
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Browse Projects</h1>
+          <p className="text-gray-600">Discover agricultural investment opportunities</p>
+        </div>
+        <Button onClick={() => fetchProjects(true)} variant="outline" disabled={refreshing}>
+          {refreshing ? (
+            <>
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              Refreshing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </>
+          )}
+        </Button>
+      </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="p-4 md:p-8">
-          <div className="mb-8">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Browse Projects</h1>
-            <p className="text-gray-600">Discover agricultural projects to invest in</p>
-
-            {/* Stats */}
-            <div className="flex flex-wrap gap-4 mt-4">
-              <Badge variant="outline" className="px-3 py-1">
-                {filteredProjects.length} Available Projects
-              </Badge>
-              <Badge variant="outline" className="px-3 py-1">
-                ₦
-                {filteredProjects
-                  .reduce((sum, p) => sum + ((p.funding_goal || 0) - (p.amount_raised || 0)), 0)
-                  .toLocaleString()}{" "}
-                Total Funding Needed
-              </Badge>
-            </div>
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-8">
-            <div className="flex-1 relative">
+      {/* Search and Filters */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="space-y-4">
+            {/* Search Bar */}
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
-                placeholder="Search projects, locations, or farmers..."
+                placeholder="Search projects by title, description, or location..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
             </div>
-            <div className="flex items-center space-x-2">
-              <Filter className="w-4 h-4 text-gray-500" />
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-full sm:w-48">
-                  <SelectValue placeholder="Filter by category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  <SelectItem value="crops">Crops</SelectItem>
-                  <SelectItem value="poultry">Poultry</SelectItem>
-                  <SelectItem value="livestock">Livestock</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
-                  <SelectItem value="equipment">Equipment</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
 
-          {/* Projects Grid */}
-          {filteredProjects.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-              {filteredProjects.map((project: any) => (
-                <ProjectCard
-                  key={project.id}
-                  id={project.id}
-                  title={project.title}
-                  description={project.description}
-                  image_url={project.image_url}
-                  funding_goal={project.funding_goal}
-                  amount_raised={project.amount_raised}
-                  category={project.category}
-                  location={project.location}
-                  expected_return={project.expected_return}
-                  risk_level={project.risk_level}
-                  farmerName="Farmer" // This would come from a join in real implementation
-                  onInvest={handleInvest}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="w-8 h-8 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No projects found</h3>
-              <p className="text-gray-500 mb-4">
-                {searchTerm || categoryFilter !== "all"
-                  ? "Try adjusting your search or filters"
-                  : "No investment opportunities available at the moment"}
+            {/* Filter Toggle */}
+            <div className="flex justify-between items-center">
+              <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                <Filter className="w-4 h-4 mr-2" />
+                Filters
+              </Button>
+              <p className="text-sm text-gray-600">
+                {filteredProjects.length} of {projects.length} projects
               </p>
-              {(searchTerm || categoryFilter !== "all") && (
-                <button
-                  onClick={() => {
-                    setSearchTerm("")
-                    setCategoryFilter("all")
-                  }}
-                  className="text-green-600 hover:text-green-700 underline"
-                >
-                  Clear filters
-                </button>
-              )}
             </div>
-          )}
-        </div>
-      </div>
 
-      <SimpleInvestmentModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} project={selectedProject} />
+            {/* Filters */}
+            {showFilters && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Category</label>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      <SelectItem value="crops">Crops</SelectItem>
+                      <SelectItem value="poultry">Poultry</SelectItem>
+                      <SelectItem value="livestock">Livestock</SelectItem>
+                      <SelectItem value="processing">Processing</SelectItem>
+                      <SelectItem value="equipment">Equipment</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Risk Level</label>
+                  <Select value={riskFilter} onValueChange={setRiskFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Risk Levels" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Risk Levels</SelectItem>
+                      <SelectItem value="low">Low Risk</SelectItem>
+                      <SelectItem value="medium">Medium Risk</SelectItem>
+                      <SelectItem value="high">High Risk</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Sort By</label>
+                  <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">Newest First</SelectItem>
+                      <SelectItem value="oldest">Oldest First</SelectItem>
+                      <SelectItem value="funding_goal_high">Highest Funding Goal</SelectItem>
+                      <SelectItem value="funding_goal_low">Lowest Funding Goal</SelectItem>
+                      <SelectItem value="return_high">Highest Return</SelectItem>
+                      <SelectItem value="return_low">Lowest Return</SelectItem>
+                      <SelectItem value="progress">Most Funded</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearchTerm("")
+                      setCategoryFilter("all")
+                      setRiskFilter("all")
+                      setSortBy("newest")
+                    }}
+                    className="w-full"
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Projects Grid */}
+      {filteredProjects.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Search className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No projects found</h3>
+            <p className="text-muted-foreground text-center mb-4">
+              Try adjusting your search criteria or filters to find more projects.
+            </p>
+            <Button
+              onClick={() => {
+                setSearchTerm("")
+                setCategoryFilter("all")
+                setRiskFilter("all")
+              }}
+            >
+              Clear All Filters
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredProjects.map((project) => {
+            const progressPercentage = (project.amount_raised / project.funding_goal) * 100
+            const remainingAmount = project.funding_goal - project.amount_raised
+            const daysLeft = project.end_date
+              ? Math.max(
+                  0,
+                  Math.ceil((new Date(project.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)),
+                )
+              : null
+
+            return (
+              <Card key={project.id} className="hover:shadow-lg transition-shadow duration-300">
+                <div className="relative">
+                  <img
+                    src={project.image_url || "/placeholder.svg?height=200&width=400&text=Project+Image"}
+                    alt={project.title}
+                    className="w-full h-48 object-cover rounded-t-lg"
+                    onError={(e) => {
+                      e.currentTarget.src = "/placeholder.svg?height=200&width=400&text=Project+Image"
+                    }}
+                  />
+                  <div className="absolute top-4 left-4 flex gap-2">
+                    <Badge className={getRiskColor(project.risk_level)} variant="secondary">
+                      {project.risk_level} risk
+                    </Badge>
+                    {project.insurance_coverage && (
+                      <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                        <Shield className="w-3 h-3 mr-1" />
+                        Insured
+                      </Badge>
+                    )}
+                  </div>
+                  {project.users?.kyc_status === "approved" && (
+                    <div className="absolute top-4 right-4">
+                      <Badge variant="secondary" className="bg-green-100 text-green-800">
+                        <Star className="w-3 h-3 mr-1" />
+                        Verified
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-lg mb-2">{project.title}</CardTitle>
+                      <div className="flex items-center text-sm text-gray-600 mb-2">
+                        <MapPin className="w-4 h-4 mr-1" />
+                        {project.location}
+                      </div>
+                      <div className="flex items-center text-sm text-gray-600">
+                        {getCategoryIcon(project.category)}
+                        <span className="ml-1 capitalize">{project.category}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600 line-clamp-2">{project.description}</p>
+                </CardHeader>
+
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Farmer Info */}
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={project.users?.avatar_url || "/placeholder.svg?height=32&width=32&text=F"}
+                        alt={project.users?.name}
+                        className="w-8 h-8 rounded-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = "/placeholder.svg?height=32&width=32&text=F"
+                        }}
+                      />
+                      <span className="text-sm font-medium">{project.users?.name || "Unknown Farmer"}</span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Progress</span>
+                        <span>{progressPercentage.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(progressPercentage, 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>₦{project.amount_raised.toLocaleString()} raised</span>
+                        <span>₦{project.funding_goal.toLocaleString()} goal</span>
+                      </div>
+                    </div>
+
+                    {/* Key Metrics */}
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="flex items-center">
+                        <TrendingUp className="w-4 h-4 mr-1 text-green-600" />
+                        <span>{project.expected_return}% return</span>
+                      </div>
+                      <div className="flex items-center">
+                        <Target className="w-4 h-4 mr-1 text-blue-600" />
+                        <span>₦{project.min_investment.toLocaleString()} min</span>
+                      </div>
+                      {daysLeft !== null && (
+                        <div className="flex items-center col-span-2">
+                          <Calendar className="w-4 h-4 mr-1 text-orange-600" />
+                          <span>{daysLeft} days left</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Additional Features */}
+                    {(project.certifications?.length || project.weather_protection) && (
+                      <div className="flex flex-wrap gap-1">
+                        {project.weather_protection && (
+                          <Badge variant="outline" className="text-xs">
+                            Weather Protected
+                          </Badge>
+                        )}
+                        {project.certifications?.slice(0, 2).map((cert, index) => (
+                          <Badge key={index} variant="outline" className="text-xs">
+                            {cert}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Action Button */}
+                    <Button
+                      onClick={() => handleInvestClick(project)}
+                      className="w-full bg-green-600 hover:bg-green-700"
+                      disabled={remainingAmount <= 0}
+                    >
+                      {remainingAmount <= 0 ? "Fully Funded" : "Invest Now"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Investment Modal */}
+      <InvestmentModal
+        isOpen={showInvestmentModal}
+        onClose={() => setShowInvestmentModal(false)}
+        project={selectedProject}
+        onInvestmentSuccess={handleInvestmentSuccess}
+      />
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
