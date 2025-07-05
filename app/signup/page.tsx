@@ -20,7 +20,8 @@ export default function SignupPage() {
     name: "",
     email: "",
     password: "",
-    role: "investor",
+    confirmPassword: "",
+    role: "",
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -31,28 +32,44 @@ export default function SignupPage() {
     e.preventDefault()
     setError("")
     setSuccess("")
-    setIsLoading(true)
 
-    const { data, error } = await signUp(formData.email, formData.password, formData.name, formData.role)
-
-    if (error) {
-      setError(error.message)
-      setIsLoading(false)
+    // Validation
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match")
       return
     }
 
-    if (data?.user) {
-      setSuccess("Account created successfully! Redirecting...")
-      setTimeout(() => {
-        if (formData.role === "farmer") {
-          router.push("/dashboard/farmer")
-        } else {
-          router.push("/dashboard/investor")
-        }
-      }, 1000)
+    if (!formData.role) {
+      setError("Please select a role")
+      return
     }
 
-    setIsLoading(false)
+    if (formData.password.length < 8) {
+      setError("Password must be at least 8 characters long")
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      const { data, error } = await signUp(formData.email, formData.password, formData.name, formData.role)
+
+      if (error) {
+        setError(typeof error === "string" ? error : error.message || "Signup failed")
+        return
+      }
+
+      if (data?.user) {
+        setSuccess("Account created successfully! Redirecting to login...")
+        setTimeout(() => {
+          router.push("/login")
+        }, 2000)
+      }
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -68,7 +85,7 @@ export default function SignupPage() {
             </span>
           </Link>
           <h2 className="mt-6 text-3xl font-bold text-gray-900">Create Account</h2>
-          <p className="mt-2 text-gray-600">Join thousands of farmers and investors</p>
+          <p className="mt-2 text-gray-600">Join our agricultural investment platform</p>
         </div>
 
         <Card>
@@ -119,19 +136,6 @@ export default function SignupPage() {
               </div>
 
               <div>
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="Create a password"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div>
                 <Label htmlFor="role">I am a</Label>
                 <Select
                   value={formData.role}
@@ -142,10 +146,37 @@ export default function SignupPage() {
                     <SelectValue placeholder="Select your role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="investor">Investor</SelectItem>
-                    <SelectItem value="farmer">Farmer</SelectItem>
+                    <SelectItem value="farmer">Farmer (seeking investment)</SelectItem>
+                    <SelectItem value="investor">Investor (looking to invest)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Create a password (min. 8 characters)"
+                  required
+                  disabled={isLoading}
+                  minLength={8}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  placeholder="Confirm your password"
+                  required
+                  disabled={isLoading}
+                />
               </div>
 
               <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={isLoading}>

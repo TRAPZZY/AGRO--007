@@ -24,35 +24,38 @@ export default function LoginPage() {
   const [success, setSuccess] = useState("")
   const router = useRouter()
 
-  // 🆕 centralised login handler ---------------------------------------------
   const performLogin = async (email: string, password: string) => {
     setError("")
     setSuccess("")
     setIsLoading(true)
 
-    const { data, error } = await signIn(email, password)
+    try {
+      const { data, error } = await signIn(email, password)
 
-    if (error) {
-      setError(error.message)
+      if (error) {
+        setError(typeof error === "string" ? error : error.message || "Login failed")
+        return
+      }
+
+      if (data?.user) {
+        setSuccess("Login successful! Redirecting...")
+        const userRole = data.user.user_metadata?.role || "investor"
+
+        setTimeout(() => {
+          if (userRole === "farmer") {
+            router.push("/dashboard/farmer")
+          } else if (userRole === "admin") {
+            router.push("/dashboard/admin")
+          } else {
+            router.push("/dashboard/investor")
+          }
+        }, 1000)
+      }
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred")
+    } finally {
       setIsLoading(false)
-      return
     }
-
-    if (data?.user) {
-      setSuccess("Login successful! Redirecting...")
-      const userRole = data.user.user_metadata?.role || "investor"
-      setTimeout(() => {
-        router.push(
-          userRole === "farmer"
-            ? "/dashboard/farmer"
-            : userRole === "admin"
-              ? "/dashboard/admin"
-              : "/dashboard/investor",
-        )
-      }, 1000)
-    }
-
-    setIsLoading(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -68,7 +71,7 @@ export default function LoginPage() {
     } as const
 
     const creds = demoCredentials[role]
-    setFormData(creds) // keep UI in sync
+    setFormData(creds)
     await performLogin(creds.email, creds.password)
   }
 
@@ -164,30 +167,33 @@ export default function LoginPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full text-xs bg-transparent"
+                  className="w-full text-xs bg-white hover:bg-gray-50"
                   onClick={() => handleDemoLogin("farmer")}
                   disabled={isLoading}
                 >
+                  {isLoading ? <LoadingSpinner size="sm" className="mr-2" /> : null}
                   Demo Farmer
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full text-xs bg-transparent"
+                  className="w-full text-xs bg-white hover:bg-gray-50"
                   onClick={() => handleDemoLogin("investor")}
                   disabled={isLoading}
                 >
+                  {isLoading ? <LoadingSpinner size="sm" className="mr-2" /> : null}
                   Demo Investor
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full text-xs bg-transparent"
+                  className="w-full text-xs bg-white hover:bg-gray-50"
                   onClick={() => handleDemoLogin("admin")}
                   disabled={isLoading}
                 >
+                  {isLoading ? <LoadingSpinner size="sm" className="mr-2" /> : null}
                   Demo Admin
                 </Button>
               </div>

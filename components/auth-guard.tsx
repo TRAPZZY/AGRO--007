@@ -3,63 +3,98 @@
 import type React from "react"
 
 import { useEffect, useState } from "react"
-import { useRouter, usePathname } from "next/navigation"
-import { getCurrentUser } from "@/lib/auth"
+import { useRouter } from "next/navigation"
+import { getCurrentUser, getUserRole } from "@/lib/auth"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 interface AuthGuardProps {
   children: React.ReactNode
-  requiredRole?: "farmer" | "investor" | "admin"
+  requiredRole?: string
+  redirectTo?: string
 }
 
-export function AuthGuard({ children, requiredRole }: AuthGuardProps) {
+export function AuthGuard({ children, requiredRole, redirectTo = "/login" }: AuthGuardProps) {
   const [isLoading, setIsLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
+  const [isAuthorized, setIsAuthorized] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const pathname = usePathname()
 
   useEffect(() => {
-    const checkAuth = async () => {
+    async function checkAuth() {
       try {
         const { user, error } = await getCurrentUser()
 
         if (error || !user) {
-          router.push(`/login?redirect=${encodeURIComponent(pathname)}`)
+          router.push(redirectTo)
           return
         }
 
-        if (requiredRole && user.role !== requiredRole) {
-          // Redirect to appropriate dashboard based on user role
-          const dashboardPath = `/dashboard/${user.role}`
-          router.push(dashboardPath)
-          return
+        if (requiredRole) {
+          const userRole = await getUserRole()
+
+          if (!userRole) {
+            setError("Unable to determine user role")
+            setIsLoading(false)
+            return
+          }
+
+          // Check role hierarchy
+          const roleHierarchy = { admin: 3, farmer: 2, investor: 1 }
+          const userLevel = roleHierarchy[userRole as keyof typeof roleHierarchy] || 0
+          const requiredLevel = roleHierarchy[requiredRole as keyof typeof roleHierarchy] || 0
+
+          if (userLevel < requiredLevel) {
+            setError("You don't have permission to access this page")
+            setIsLoading(false)
+            return
+          }
         }
 
-        setUser(user)
-      } catch (error) {
-        console.error("Auth check error:", error)
-        router.push("/login")
+        setIsAuthorized(true)
+      } catch (err) {
+        console.error("Auth check failed:", err)
+        setError("Authentication check failed")
       } finally {
         setIsLoading(false)
       }
     }
 
     checkAuth()
-  }, [router, pathname, requiredRole])
+  }, [requiredRole, redirectTo, router])
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 via-white to-emerald-50">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <LoadingSpinner size="lg" />
-          <p className="mt-4 text-gray-600">Verifying authentication...</p>
+          <p className="mt-4 text-gray-600">Checking authentication...</p>
         </div>
       </div>
     )
   }
 
-  if (!user) {
-    return null
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Alert variant="destructive" className="max-w-md">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    )
+  }
+
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Alert variant="destructive" className="max-w-md">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>Access denied. Redirecting...</AlertDescription>
+        </Alert>
+      </div>
+    )
   }
 
   return <>{children}</>
