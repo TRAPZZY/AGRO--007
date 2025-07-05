@@ -1,108 +1,92 @@
-import { supabase } from "./supabase/client"
-import { z } from "zod"
+import { supabase } from "@/lib/supabase/client"
+import type { User } from "@supabase/supabase-js"
 
-// Validation schemas
-const signUpSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  role: z.enum(["farmer", "investor"], {
-    required_error: "Please select a role",
-  }),
-})
+export interface AuthUser extends User {
+  user_metadata?: {
+    name?: string
+    role?: string
+  }
+}
 
-const signInSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
-})
+export interface UserProfile {
+  id: string
+  email: string
+  name: string
+  role: "farmer" | "investor" | "admin"
+  avatar_url?: string
+  phone?: string
+  location?: string
+  bio?: string
+  kyc_status?: string
+  created_at: string
+  updated_at: string
+}
 
-export type SignUpData = z.infer<typeof signUpSchema>
-export type SignInData = z.infer<typeof signInSchema>
+// Enhanced error handling
+export class AuthError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+  ) {
+    super(message)
+    this.name = "AuthError"
+  }
+}
 
-// Sign up function - simplified to rely on database trigger
-export async function signUp(data: SignUpData) {
+export async function signUp(email: string, password: string, userData: { name: string; role: string }) {
   try {
-    // Validate input
-    const validatedData = signUpSchema.parse(data)
-
-    console.log("Attempting signup with:", { email: validatedData.email, role: validatedData.role })
-
-    // Create user account - the database trigger will handle profile creation
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: validatedData.email,
-      password: validatedData.password,
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
       options: {
         data: {
-          name: validatedData.name,
-          role: validatedData.role,
+          name: userData.name,
+          role: userData.role,
         },
       },
     })
 
-    if (authError) {
-      console.error("Auth error:", authError)
-      throw new Error(authError.message)
+    if (error) {
+      throw new AuthError(error.message, error.message)
     }
 
-    if (!authData.user) {
-      throw new Error("Failed to create user account")
-    }
-
-    console.log("Signup successful:", authData.user.id)
-    return { user: authData.user, session: authData.session }
-  } catch (error) {
+    return { user: data.user, error: null }
+  } catch (error: any) {
     console.error("Signup error:", error)
-    if (error instanceof z.ZodError) {
-      throw new Error(error.errors.map((e) => e.message).join(", "))
-    }
-    throw error
+    return { user: null, error: error.message || "Failed to create account" }
   }
 }
 
-// Sign in function
-export async function signIn(data: SignInData) {
+export async function signIn(email: string, password: string) {
   try {
-    // Validate input
-    const validatedData = signInSchema.parse(data)
-
-    console.log("Attempting signin with:", validatedData.email)
-
-    // Sign in user
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: validatedData.email,
-      password: validatedData.password,
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     })
 
-    if (authError) {
-      console.error("Signin error:", authError)
-      throw new Error(authError.message)
+    if (error) {
+      throw new AuthError(error.message, error.message)
     }
 
-    if (!authData.user || !authData.session) {
-      throw new Error("Invalid email or password")
-    }
-
-    console.log("Signin successful:", authData.user.id)
-    return { user: authData.user, session: authData.session }
-  } catch (error) {
+    return { user: data.user, error: null }
+  } catch (error: any) {
     console.error("Signin error:", error)
-    if (error instanceof z.ZodError) {
-      throw new Error(error.errors.map((e) => e.message).join(", "))
-    }
-    throw error
+    return { user: null, error: error.message || "Failed to sign in" }
   }
 }
 
-// Sign out function
 export async function signOut() {
-  const { error } = await supabase.auth.signOut()
-  if (error) {
-    throw new Error(error.message)
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+    return { error: null }
+  } catch (error: any) {
+    console.error("Signout error:", error)
+    return { error: error.message || "Failed to sign out" }
   }
 }
 
-// Get current user with profile data
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<{ user: AuthUser | null; error: string | null }> {
   try {
     const {
       data: { user },
@@ -110,108 +94,83 @@ export async function getCurrentUser() {
     } = await supabase.auth.getUser()
 
     if (error) {
-      throw new Error(error.message)
+      throw new AuthError(error.message, error.message)
     }
 
-    if (!user) {
-      return null
-    }
-
-    // Get user profile data
-    const { data: profile, error: profileError } = await supabase.from("users").select("*").eq("id", user.id).single()
-
-    if (profileError) {
-      console.error("Profile fetch error:", profileError)
-      // Return user without profile if profile fetch fails
-      return { ...user, profile: null }
-    }
-
-    return { ...user, profile }
-  } catch (error) {
+    return { user: user as AuthUser, error: null }
+  } catch (error: any) {
     console.error("Get current user error:", error)
-    return null
+    return { user: null, error: error.message || "Failed to get current user" }
   }
 }
 
-// Get user profile
-export async function getUserProfile(userId: string) {
-  const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
+export async function getUserProfile(userId: string): Promise<{ profile: UserProfile | null; error: string | null }> {
+  try {
+    const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
 
-  if (error) {
-    throw new Error(error.message)
+    if (error) {
+      if (error.code === "PGRST116") {
+        return { profile: null, error: "Profile not found" }
+      }
+      throw error
+    }
+
+    return { profile: data as UserProfile, error: null }
+  } catch (error: any) {
+    console.error("Get user profile error:", error)
+    return { profile: null, error: error.message || "Failed to get user profile" }
   }
-
-  return data
 }
 
-// Update user profile
 export async function updateUserProfile(
   userId: string,
-  updates: Partial<{
-    name: string
-    phone: string
-    address: string
-    bio: string
-    avatar_url: string
-  }>,
-) {
-  const { data, error } = await supabase
-    .from("users")
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", userId)
-    .select()
-    .single()
+  updates: Partial<UserProfile>,
+): Promise<{ profile: UserProfile | null; error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", userId)
+      .select()
+      .single()
 
-  if (error) {
-    throw new Error(error.message)
+    if (error) throw error
+
+    return { profile: data as UserProfile, error: null }
+  } catch (error: any) {
+    console.error("Update user profile error:", error)
+    return { profile: null, error: error.message || "Failed to update profile" }
   }
-
-  return data
 }
 
-// Reset password
+// Demo login functions for testing
+export async function signInAsDemo(role: "farmer" | "investor") {
+  const demoCredentials = {
+    farmer: { email: "farmer@demo.com", password: "demo123456" },
+    investor: { email: "investor@demo.com", password: "demo123456" },
+  }
+
+  return signIn(demoCredentials[role].email, demoCredentials[role].password)
+}
+
+// Password reset
 export async function resetPassword(email: string) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/reset-password`,
-  })
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
 
-  if (error) {
-    throw new Error(error.message)
+    if (error) throw error
+    return { error: null }
+  } catch (error: any) {
+    console.error("Password reset error:", error)
+    return { error: error.message || "Failed to send reset email" }
   }
 }
 
-// Update password
-export async function updatePassword(newPassword: string) {
-  const { error } = await supabase.auth.updateUser({
-    password: newPassword,
+// Session management
+export function onAuthStateChange(callback: (user: AuthUser | null) => void) {
+  return supabase.auth.onAuthStateChange((event, session) => {
+    callback((session?.user as AuthUser) || null)
   })
-
-  if (error) {
-    throw new Error(error.message)
-  }
-}
-
-// Helper functions for backward compatibility
-export async function isAuthenticated() {
-  const user = await getCurrentUser()
-  return !!user
-}
-
-export async function getUserRole() {
-  const user = await getCurrentUser()
-  return user?.profile?.role || null
-}
-
-export async function checkUserPermissions(requiredRole: string) {
-  const user = await getCurrentUser()
-  if (!user?.profile) return false
-
-  const roleHierarchy = { admin: 3, farmer: 2, investor: 1 }
-  const userLevel = roleHierarchy[user.profile.role as keyof typeof roleHierarchy] || 0
-  const requiredLevel = roleHierarchy[requiredRole as keyof typeof roleHierarchy] || 0
-
-  return userLevel >= requiredLevel
 }

@@ -1,21 +1,38 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { CollapsibleSidebar } from "@/components/collapsible-sidebar"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/lib/hooks/use-toast"
 import { ToastContainer } from "@/components/ui/toast"
-import { Plus, DollarSign, Users, TrendingUp, Leaf } from "lucide-react"
+import { useOptimizedData } from "@/lib/hooks/use-optimized-data"
+import { Plus, DollarSign, Users, TrendingUp, Leaf, RefreshCw, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
-import { createClient } from "@/lib/supabase/client"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+
+interface Project {
+  id: string
+  title: string
+  funding_goal: number
+  amount_raised: number
+  status: string
+  created_at: string
+}
+
+interface Investment {
+  id: string
+  investor_id: string
+  project_id: string
+  amount: number
+  status: string
+}
 
 export default function FarmerDashboard() {
   const [user, setUser] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [isInitialized, setIsInitialized] = useState(false)
   const [stats, setStats] = useState({
     totalProjects: 0,
@@ -26,6 +43,7 @@ export default function FarmerDashboard() {
   const router = useRouter()
   const { toasts, toast, removeToast } = useToast()
 
+  // Initialize user
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -47,131 +65,143 @@ export default function FarmerDashboard() {
     checkAuth()
   }, [router])
 
-  const fetchStats = async (farmerId: string) => {
-    if (!farmerId) return
+  // Optimized data fetching for projects
+  const {
+    data: projects,
+    loading: projectsLoading,
+    error: projectsError,
+    isConnected: projectsConnected,
+    refetch: refetchProjects,
+  } = useOptimizedData<Project>({
+    table: "projects",
+    select: "*",
+    filter: user?.id ? { farmer_id: user.id } : undefined,
+    orderBy: { column: "created_at", ascending: false },
+    enabled: !!user?.id && isInitialized,
+    cacheKey: `farmer-projects-${user?.id}`,
+    refetchInterval: 30000,
+  })
 
+  // Get project IDs for investment fetching
+  const projectIds = useMemo(() => projects.map((p) => p.id), [projects])
+
+  // Optimized data fetching for investments (for this farmer's projects)
+  const {
+    data: investments,
+    loading: investmentsLoading,
+    error: investmentsError,
+    isConnected: investmentsConnected,
+    refetch: refetchInvestments,
+  } = useOptimizedData<Investment>({
+    table: "investments",
+    select: "*",
+    filter: projectIds.length > 0 ? { project_id: projectIds[0] } : undefined, // Simplified for demo
+    enabled: projectIds.length > 0 && isInitialized,
+    cacheKey: `farmer-investments-${user?.id}`,
+  })
+
+  // Calculate stats from projects and investments data
+  const calculatedStats = useMemo(() => {
+    if (!projects.length) {
+      return {
+        totalProjects: 0,
+        totalRaised: 0,
+        activeInvestors: 0,
+        successRate: 0,
+      }
+    }
+
+    const totalRaised = projects.reduce((sum, p) => sum + (p.amount_raised || 0), 0)
+    const uniqueInvestors = new Set(investments.map((inv) => inv.investor_id)).size
+    const completedProjects = projects.filter((p) => p.status === "completed").length
+    const successRate = projects.length ? Math.round((completedProjects / projects.length) * 100) : 0
+
+    return {
+      totalProjects: projects.length,
+      totalRaised,
+      activeInvestors: uniqueInvestors,
+      successRate,
+    }
+  }, [projects, investments])
+
+  // Update stats when data changes
+  useEffect(() => {
+    setStats(calculatedStats)
+  }, [calculatedStats])
+
+  // Handle manual refresh
+  const handleRefresh = async () => {
     try {
-      const supabase = createClient()
-
-      // Fetch projects stats
-      const { data: projects, error: projectsError } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("farmer_id", farmerId)
-
-      if (projectsError) {
-        console.error("Projects fetch error:", projectsError)
-        return
-      }
-
-      // Fetch investments for this farmer's projects
-      const projectIds = projects?.map((p) => p.id).filter(Boolean) || []
-      let investments: any[] = []
-
-      if (projectIds.length > 0) {
-        const { data: investmentsData, error: investmentsError } = await supabase
-          .from("investments")
-          .select("*")
-          .in("project_id", projectIds)
-
-        if (investmentsError) {
-          console.error("Investments fetch error:", investmentsError)
-        } else {
-          investments = investmentsData || []
-        }
-      }
-
-      const totalRaised = projects?.reduce((sum, p) => sum + (p?.amount_raised || 0), 0) || 0
-      const uniqueInvestors = new Set(investments?.map((inv) => inv?.investor_id).filter(Boolean)).size
-      const completedProjects = projects?.filter((p) => p?.status === "completed").length || 0
-      const successRate = projects?.length ? Math.round((completedProjects / projects.length) * 100) : 0
-
-      setStats({
-        totalProjects: projects?.length || 0,
-        totalRaised,
-        activeInvestors: uniqueInvestors,
-        successRate,
+      await Promise.all([refetchProjects(), refetchInvestments()])
+      toast({
+        title: "Data Refreshed",
+        description: "Your dashboard data has been updated",
+        type: "success",
       })
-    } catch (error: any) {
-      console.error("Error fetching stats:", error)
-    } finally {
-      setIsLoading(false)
+    } catch (error) {
+      toast({
+        title: "Refresh Failed",
+        description: "Unable to refresh data. Please try again.",
+        type: "error",
+      })
     }
   }
 
-  useEffect(() => {
-    if (user?.id && isInitialized) {
-      fetchStats(user.id)
-    }
-  }, [user?.id, isInitialized])
-
-  // Real-time subscription for project updates
-  useEffect(() => {
-    if (!user?.id || !isInitialized) return
-
-    const supabase = createClient()
-    const subscription = supabase
-      .channel("farmer_dashboard")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "projects",
-          filter: `farmer_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === "UPDATE" && payload.new && payload.old) {
-            // Show notification for new investments
-            const newAmount = payload.new.amount_raised || 0
-            const oldAmount = payload.old.amount_raised || 0
-            if (newAmount > oldAmount) {
-              const newInvestment = newAmount - oldAmount
-              toast({
-                title: "New Investment Received!",
-                description: `₦${newInvestment.toLocaleString()} invested in ${payload.new.title || "your project"}`,
-                type: "success",
-              })
-            }
-          }
-          // Refresh stats
-          if (user?.id) {
-            fetchStats(user.id)
-          }
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(subscription)
-    }
-  }, [user?.id, isInitialized, toast])
-
-  if (isLoading || !isInitialized) {
+  if (!isInitialized || projectsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+        </div>
       </div>
     )
   }
 
   // Safe user data access
   const userName = user?.user_metadata?.name || user?.email || "Farmer"
+  const isConnected = projectsConnected && investmentsConnected
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <CollapsibleSidebar userRole="farmer" />
+      <CollapsibleSidebar userRole="farmer" userName={userName} />
 
       <div className="flex-1 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="mb-8">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Welcome back, {userName}!</h1>
-            <p className="text-gray-600 mt-2">Manage your agricultural projects and track your progress</p>
+          {/* Header with refresh button */}
+          <div className="flex justify-between items-start mb-8">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Welcome back, {userName}!</h1>
+              <p className="text-gray-600 mt-2">Manage your agricultural projects and track your progress</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center text-sm text-gray-500">
+                <div className={`w-2 h-2 rounded-full mr-2 ${isConnected ? "bg-green-500" : "bg-red-500"}`} />
+                {isConnected ? "Connected" : "Disconnected"}
+              </div>
+              <Button variant="outline" size="sm" onClick={handleRefresh}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
           </div>
+
+          {/* Error Alerts */}
+          {(projectsError || investmentsError) && (
+            <Alert variant="destructive" className="mb-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                {projectsError || investmentsError}.{" "}
+                <button onClick={handleRefresh} className="underline">
+                  Try refreshing
+                </button>
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
-            <Card>
+            <Card className="hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
                 <Leaf className="h-4 w-4 text-green-600" />
@@ -182,7 +212,7 @@ export default function FarmerDashboard() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Raised</CardTitle>
                 <DollarSign className="h-4 w-4 text-green-600" />
@@ -193,7 +223,7 @@ export default function FarmerDashboard() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Active Investors</CardTitle>
                 <Users className="h-4 w-4 text-green-600" />
@@ -204,7 +234,7 @@ export default function FarmerDashboard() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
                 <TrendingUp className="h-4 w-4 text-green-600" />
@@ -218,7 +248,7 @@ export default function FarmerDashboard() {
 
           {/* Quick Actions */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-            <Card>
+            <Card className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
                 <CardDescription>Get started with your farming projects</CardDescription>
@@ -231,19 +261,19 @@ export default function FarmerDashboard() {
                   </Button>
                 </Link>
                 <Link href="/dashboard/farmer/my-projects">
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full bg-transparent">
                     View My Projects
                   </Button>
                 </Link>
                 <Link href="/dashboard/farmer/profile">
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full bg-transparent">
                     Complete Profile
                   </Button>
                 </Link>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
                 <CardDescription>Your latest project updates</CardDescription>
@@ -271,6 +301,17 @@ export default function FarmerDashboard() {
                       <p className="text-xs text-gray-500">Create projects to attract investors</p>
                     </div>
                   </div>
+                  {projects.length > 0 && (
+                    <div className="flex items-center space-x-4">
+                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">Latest project</p>
+                        <p className="text-xs text-gray-500">
+                          {projects[0]?.title || "Untitled"} - {new Date(projects[0]?.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
