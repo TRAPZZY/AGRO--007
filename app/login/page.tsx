@@ -24,13 +24,13 @@ export default function LoginPage() {
   const [success, setSuccess] = useState("")
   const router = useRouter()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // 🆕 centralised login handler ---------------------------------------------
+  const performLogin = async (email: string, password: string) => {
     setError("")
     setSuccess("")
     setIsLoading(true)
 
-    const { data, error } = await signIn(formData.email, formData.password)
+    const { data, error } = await signIn(email, password)
 
     if (error) {
       setError(error.message)
@@ -40,37 +40,36 @@ export default function LoginPage() {
 
     if (data?.user) {
       setSuccess("Login successful! Redirecting...")
-
-      // Get user role from metadata
       const userRole = data.user.user_metadata?.role || "investor"
-
       setTimeout(() => {
-        if (userRole === "farmer") {
-          router.push("/dashboard/farmer")
-        } else if (userRole === "admin") {
-          router.push("/dashboard/admin")
-        } else {
-          router.push("/dashboard/investor")
-        }
+        router.push(
+          userRole === "farmer"
+            ? "/dashboard/farmer"
+            : userRole === "admin"
+              ? "/dashboard/admin"
+              : "/dashboard/investor",
+        )
       }, 1000)
     }
 
     setIsLoading(false)
   }
 
-  const handleDemoLogin = async (role: string) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await performLogin(formData.email, formData.password)
+  }
+
+  const handleDemoLogin = async (role: "farmer" | "investor" | "admin") => {
     const demoCredentials = {
       farmer: { email: "farmer@demo.com", password: "password123" },
       investor: { email: "investor@demo.com", password: "password123" },
       admin: { email: "admin@demo.com", password: "password123" },
-    }
+    } as const
 
-    const creds = demoCredentials[role as keyof typeof demoCredentials]
-    setFormData(creds)
-
-    setTimeout(() => {
-      handleSubmit({ preventDefault: () => {} } as React.FormEvent)
-    }, 100)
+    const creds = demoCredentials[role]
+    setFormData(creds) // keep UI in sync
+    await performLogin(creds.email, creds.password)
   }
 
   return (
@@ -165,7 +164,7 @@ export default function LoginPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full text-xs"
+                  className="w-full text-xs bg-transparent"
                   onClick={() => handleDemoLogin("farmer")}
                   disabled={isLoading}
                 >
@@ -175,7 +174,7 @@ export default function LoginPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full text-xs"
+                  className="w-full text-xs bg-transparent"
                   onClick={() => handleDemoLogin("investor")}
                   disabled={isLoading}
                 >
@@ -185,7 +184,7 @@ export default function LoginPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full text-xs"
+                  className="w-full text-xs bg-transparent"
                   onClick={() => handleDemoLogin("admin")}
                   disabled={isLoading}
                 >
