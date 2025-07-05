@@ -19,13 +19,15 @@ const signInSchema = z.object({
 export type SignUpData = z.infer<typeof signUpSchema>
 export type SignInData = z.infer<typeof signInSchema>
 
-// Sign up function
+// Sign up function - simplified to rely on database trigger
 export async function signUp(data: SignUpData) {
   try {
     // Validate input
     const validatedData = signUpSchema.parse(data)
 
-    // Create user account
+    console.log("Attempting signup with:", { email: validatedData.email, role: validatedData.role })
+
+    // Create user account - the database trigger will handle profile creation
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: validatedData.email,
       password: validatedData.password,
@@ -38,6 +40,7 @@ export async function signUp(data: SignUpData) {
     })
 
     if (authError) {
+      console.error("Auth error:", authError)
       throw new Error(authError.message)
     }
 
@@ -45,23 +48,10 @@ export async function signUp(data: SignUpData) {
       throw new Error("Failed to create user account")
     }
 
-    // Create user profile
-    const { error: profileError } = await supabase.from("users").insert({
-      id: authData.user.id,
-      email: validatedData.email,
-      name: validatedData.name,
-      role: validatedData.role,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-
-    if (profileError) {
-      console.error("Profile creation error:", profileError)
-      // Don't throw here as the auth user was created successfully
-    }
-
+    console.log("Signup successful:", authData.user.id)
     return { user: authData.user, session: authData.session }
   } catch (error) {
+    console.error("Signup error:", error)
     if (error instanceof z.ZodError) {
       throw new Error(error.errors.map((e) => e.message).join(", "))
     }
@@ -75,6 +65,8 @@ export async function signIn(data: SignInData) {
     // Validate input
     const validatedData = signInSchema.parse(data)
 
+    console.log("Attempting signin with:", validatedData.email)
+
     // Sign in user
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: validatedData.email,
@@ -82,6 +74,7 @@ export async function signIn(data: SignInData) {
     })
 
     if (authError) {
+      console.error("Signin error:", authError)
       throw new Error(authError.message)
     }
 
@@ -89,8 +82,10 @@ export async function signIn(data: SignInData) {
       throw new Error("Invalid email or password")
     }
 
+    console.log("Signin successful:", authData.user.id)
     return { user: authData.user, session: authData.session }
   } catch (error) {
+    console.error("Signin error:", error)
     if (error instanceof z.ZodError) {
       throw new Error(error.errors.map((e) => e.message).join(", "))
     }
@@ -106,16 +101,36 @@ export async function signOut() {
   }
 }
 
-// Get current user
+// Get current user with profile data
 export async function getCurrentUser() {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-  if (error) {
-    throw new Error(error.message)
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!user) {
+      return null
+    }
+
+    // Get user profile data
+    const { data: profile, error: profileError } = await supabase.from("users").select("*").eq("id", user.id).single()
+
+    if (profileError) {
+      console.error("Profile fetch error:", profileError)
+      // Return user without profile if profile fetch fails
+      return { ...user, profile: null }
+    }
+
+    return { ...user, profile }
+  } catch (error) {
+    console.error("Get current user error:", error)
+    return null
   }
-  return user
 }
 
 // Get user profile
@@ -177,4 +192,26 @@ export async function updatePassword(newPassword: string) {
   if (error) {
     throw new Error(error.message)
   }
+}
+
+// Helper functions for backward compatibility
+export async function isAuthenticated() {
+  const user = await getCurrentUser()
+  return !!user
+}
+
+export async function getUserRole() {
+  const user = await getCurrentUser()
+  return user?.profile?.role || null
+}
+
+export async function checkUserPermissions(requiredRole: string) {
+  const user = await getCurrentUser()
+  if (!user?.profile) return false
+
+  const roleHierarchy = { admin: 3, farmer: 2, investor: 1 }
+  const userLevel = roleHierarchy[user.profile.role as keyof typeof roleHierarchy] || 0
+  const requiredLevel = roleHierarchy[requiredRole as keyof typeof roleHierarchy] || 0
+
+  return userLevel >= requiredLevel
 }
