@@ -3,64 +3,62 @@
 import type React from "react"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { getCurrentUser, getUserRole } from "@/lib/auth"
+import { useRouter, usePathname } from "next/navigation"
+import { getCurrentUser } from "@/lib/auth"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 interface AuthGuardProps {
   children: React.ReactNode
-  requiredRole?: string
-  redirectTo?: string
+  requiredRole?: "farmer" | "investor" | "admin"
 }
 
-export function AuthGuard({ children, requiredRole, redirectTo = "/login" }: AuthGuardProps) {
+export function AuthGuard({ children, requiredRole }: AuthGuardProps) {
   const [isLoading, setIsLoading] = useState(true)
-  const [isAuthorized, setIsAuthorized] = useState(false)
+  const [user, setUser] = useState<any>(null)
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { user } = await getCurrentUser()
+        const { user, error } = await getCurrentUser()
 
-        if (!user) {
-          router.push(redirectTo)
+        if (error || !user) {
+          router.push(`/login?redirect=${encodeURIComponent(pathname)}`)
           return
         }
 
-        if (requiredRole) {
-          const userRole = await getUserRole()
-          const roleHierarchy = { admin: 3, farmer: 2, investor: 1 }
-          const userLevel = roleHierarchy[userRole as keyof typeof roleHierarchy] || 0
-          const requiredLevel = roleHierarchy[requiredRole as keyof typeof roleHierarchy] || 0
-
-          if (userLevel < requiredLevel) {
-            router.push("/unauthorized")
-            return
-          }
+        if (requiredRole && user.role !== requiredRole) {
+          // Redirect to appropriate dashboard based on user role
+          const dashboardPath = `/dashboard/${user.role}`
+          router.push(dashboardPath)
+          return
         }
 
-        setIsAuthorized(true)
+        setUser(user)
       } catch (error) {
-        console.error("Auth check failed:", error)
-        router.push(redirectTo)
+        console.error("Auth check error:", error)
+        router.push("/login")
       } finally {
         setIsLoading(false)
       }
     }
 
     checkAuth()
-  }, [requiredRole, redirectTo, router])
+  }, [router, pathname, requiredRole])
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 via-white to-emerald-50">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-600">Verifying authentication...</p>
+        </div>
       </div>
     )
   }
 
-  if (!isAuthorized) {
+  if (!user) {
     return null
   }
 
