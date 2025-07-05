@@ -9,10 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Leaf, AlertCircle, CheckCircle } from "lucide-react"
+import { Leaf, AlertCircle, CheckCircle, Info } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { signIn } from "@/lib/auth"
+import { signIn, getRegisteredUsers } from "@/lib/auth"
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [showDebugInfo, setShowDebugInfo] = useState(false)
   const router = useRouter()
 
   const performLogin = async (email: string, password: string) => {
@@ -74,6 +75,10 @@ export default function LoginPage() {
     setFormData(creds)
     await performLogin(creds.email, creds.password)
   }
+
+  // Debug function to show registered users
+  const debugUsers = getRegisteredUsers()
+  const customUsers = Object.values(debugUsers).filter((user: any) => !user.email.includes("@demo.com"))
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center py-12 px-4">
@@ -198,6 +203,33 @@ export default function LoginPage() {
                 </Button>
               </div>
             </div>
+
+            {/* Show registered users for debugging */}
+            {customUsers.length > 0 && (
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => setShowDebugInfo(!showDebugInfo)}
+                >
+                  <Info className="w-3 h-3 mr-1" />
+                  {showDebugInfo ? "Hide" : "Show"} Registered Accounts ({customUsers.length})
+                </Button>
+
+                {showDebugInfo && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded text-xs">
+                    <p className="font-medium mb-2">Your registered accounts:</p>
+                    {customUsers.map((user: any, index) => (
+                      <div key={index} className="mb-1">
+                        <strong>{user.email}</strong> ({user.role})
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

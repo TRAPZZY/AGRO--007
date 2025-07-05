@@ -63,6 +63,25 @@ const isV0Environment = () => {
   return window.location.hostname.includes("vusercontent.net") || window.location.hostname.includes("v0.dev")
 }
 
+// Mock user storage for v0 environment
+const mockUserStorage = {
+  getUsers: () => {
+    if (typeof window === "undefined") return {}
+    const users = localStorage.getItem("demo-users")
+    return users ? JSON.parse(users) : { ...DEMO_USERS }
+  },
+  saveUser: (email: string, userData: any) => {
+    if (typeof window === "undefined") return
+    const users = mockUserStorage.getUsers()
+    users[email] = userData
+    localStorage.setItem("demo-users", JSON.stringify(users))
+  },
+  getUser: (email: string) => {
+    const users = mockUserStorage.getUsers()
+    return users[email] || null
+  },
+}
+
 // Mock session storage for v0 environment
 const mockSessionStorage = {
   getSession: () => {
@@ -112,19 +131,25 @@ export async function signUp(email: string, password: string, name: string, role
     // In v0 environment, use mock signup
     if (isV0Environment()) {
       // Check if user already exists
-      if (DEMO_USERS[validatedEmail as keyof typeof DEMO_USERS]) {
-        throw new Error("User already exists")
+      const existingUser = mockUserStorage.getUser(validatedEmail)
+      if (existingUser) {
+        throw new Error("An account with this email already exists")
       }
 
-      // Create new demo user
+      // Create new user
       const newUser = {
-        id: `demo-${role}-${Date.now()}`,
+        id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         email: validatedEmail,
         name: validatedName,
         role: role,
+        password: validatedPassword, // In production, this would be hashed
+        created_at: new Date().toISOString(),
       }
 
-      mockSessionStorage.setSession(newUser)
+      // Save user to mock storage
+      mockUserStorage.saveUser(validatedEmail, newUser)
+
+      console.log("User created successfully:", { email: validatedEmail, name: validatedName, role })
 
       return {
         data: {
@@ -175,22 +200,30 @@ export async function signIn(email: string, password: string, rememberMe = false
 
     // In v0 environment, use mock authentication
     if (isV0Environment()) {
-      const demoUser = DEMO_USERS[validatedEmail as keyof typeof DEMO_USERS]
+      // Get user from mock storage (includes both demo users and registered users)
+      const user = mockUserStorage.getUser(validatedEmail)
 
-      if (!demoUser || demoUser.password !== validatedPassword) {
-        throw new Error("Invalid email or password")
+      if (!user) {
+        throw new Error("No account found with this email address")
       }
 
-      mockSessionStorage.setSession(demoUser)
+      if (user.password !== validatedPassword) {
+        throw new Error("Invalid password")
+      }
+
+      // Set session
+      mockSessionStorage.setSession(user)
+
+      console.log("User signed in successfully:", { email: validatedEmail, role: user.role })
 
       return {
         data: {
           user: {
-            id: demoUser.id,
-            email: demoUser.email,
+            id: user.id,
+            email: user.email,
             user_metadata: {
-              name: demoUser.name,
-              role: demoUser.role,
+              name: user.name,
+              role: user.role,
             },
           },
         },
@@ -220,6 +253,7 @@ export async function signOut() {
     // In v0 environment, clear mock session
     if (isV0Environment()) {
       mockSessionStorage.clearSession()
+      console.log("User signed out successfully")
       return { error: null }
     }
 
@@ -236,7 +270,10 @@ export async function getCurrentUser() {
     // In v0 environment, get mock user
     if (isV0Environment()) {
       const session = mockSessionStorage.getSession()
-      return { user: session?.user || null, error: null }
+      if (session && session.expires_at > Date.now()) {
+        return { user: session.user, error: null }
+      }
+      return { user: null, error: null }
     }
 
     // Real Supabase user for production
@@ -275,6 +312,10 @@ export async function resetPassword(email: string) {
 
     // In v0 environment, simulate password reset
     if (isV0Environment()) {
+      const user = mockUserStorage.getUser(validatedEmail)
+      if (!user) {
+        throw new Error("No account found with this email address")
+      }
       // Just return success for demo
       return { error: null }
     }
@@ -298,6 +339,14 @@ export async function updatePassword(newPassword: string) {
 
     // In v0 environment, simulate password update
     if (isV0Environment()) {
+      const session = mockSessionStorage.getSession()
+      if (session?.user?.email) {
+        const user = mockUserStorage.getUser(session.user.email)
+        if (user) {
+          user.password = validatedPassword
+          mockUserStorage.saveUser(session.user.email, user)
+        }
+      }
       return { error: null }
     }
 
@@ -356,4 +405,12 @@ export async function checkUserPermissions(requiredRole: string) {
   } catch (error) {
     return false
   }
+}
+
+// Debug function to see all registered users (only in v0 environment)
+export function getRegisteredUsers() {
+  if (isV0Environment()) {
+    return mockUserStorage.getUsers()
+  }
+  return {}
 }

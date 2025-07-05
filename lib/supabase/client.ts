@@ -1,21 +1,16 @@
 import { createClient } from "@supabase/supabase-js"
 import type { Database } from "./types"
 
-// Check if we're in v0 environment to avoid CORS issues
-const isV0Environment = () => {
-  if (typeof window === "undefined") return false
-  return window.location.hostname.includes("vusercontent.net") || window.location.hostname.includes("v0.dev")
+// Get environment variables with fallbacks for v0 environment
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://demo.supabase.co"
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "demo-anon-key"
+
+// Validate that we have proper credentials
+if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === "" || supabaseAnonKey === "") {
+  console.warn("⚠️ Supabase credentials not found. Using demo mode.")
 }
 
-// Use safe fallback URLs that won't cause CORS issues in v0
-const SAFE_FALLBACK_URL = "https://demo.supabase.co"
-const SAFE_FALLBACK_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlbW8iLCJyb2xlIjoiYW5vbiIsImlhdCI6MTY0NTg5NzI2MCwiZXhwIjoyMDYxNDczMjYwfQ.demo"
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || SAFE_FALLBACK_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || SAFE_FALLBACK_KEY
-
-// Create client with error handling
+// Create Supabase client with error handling
 let supabase: any
 
 try {
@@ -60,6 +55,14 @@ try {
       subscribe: () => Promise.resolve({ error: null }),
     }),
   }
+}
+
+// Test connection (only in development)
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  supabase.auth.getSession().catch((error) => {
+    console.warn("Supabase connection test failed:", error.message)
+    console.info("App will use mock authentication for demo purposes")
+  })
 }
 
 export { supabase, createClient }

@@ -34,6 +34,21 @@ export default function SignupPage() {
     setSuccess("")
 
     // Validation
+    if (!formData.name.trim()) {
+      setError("Please enter your full name")
+      return
+    }
+
+    if (!formData.email.trim()) {
+      setError("Please enter your email address")
+      return
+    }
+
+    if (!formData.password) {
+      setError("Please enter a password")
+      return
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match")
       return
@@ -49,6 +64,13 @@ export default function SignupPage() {
       return
     }
 
+    // Check for valid email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(formData.email)) {
+      setError("Please enter a valid email address")
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -60,10 +82,20 @@ export default function SignupPage() {
       }
 
       if (data?.user) {
-        setSuccess("Account created successfully! Redirecting to login...")
+        setSuccess("Account created successfully! You can now sign in with your credentials.")
+        // Clear form
+        setFormData({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          role: "",
+        })
+
+        // Redirect to login after a delay
         setTimeout(() => {
           router.push("/login")
-        }, 2000)
+        }, 3000)
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred")
@@ -197,6 +229,14 @@ export default function SignupPage() {
                 <Link href="/login" className="text-green-600 hover:text-green-500 font-medium">
                   Sign in here
                 </Link>
+              </p>
+            </div>
+
+            {/* Helpful info */}
+            <div className="mt-4 p-3 bg-amber-50 rounded-lg">
+              <p className="text-xs text-amber-800">
+                <strong>Demo Mode:</strong> Your account will be saved locally for this session. In production, accounts
+                are stored securely in the database.
               </p>
             </div>
           </CardContent>
