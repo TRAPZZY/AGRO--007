@@ -1,4 +1,5 @@
 import { supabase } from "./supabase/client"
+import { supabaseAdmin } from "./supabase/server"
 import { z } from "zod"
 
 // Input validation schemas
@@ -32,20 +33,6 @@ function sanitizeInput(input: string): string {
   return input.trim().replace(/[<>]/g, "")
 }
 
-// Audit logging function
-async function logAuditEvent(action: string, userId: string | null, details: any) {
-  try {
-    await supabase.from("audit_logs").insert({
-      user_id: userId,
-      action,
-      details,
-      created_at: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.error("Audit logging failed:", error)
-  }
-}
-
 export async function signUp(email: string, password: string, name: string, role: string) {
   try {
     // Input validation
@@ -63,6 +50,7 @@ export async function signUp(email: string, password: string, name: string, role
       throw new Error("Invalid role selected")
     }
 
+    // Sign up with Supabase
     const { data, error } = await supabase.auth.signUp({
       email: validatedEmail,
       password: validatedPassword,
@@ -76,24 +64,13 @@ export async function signUp(email: string, password: string, name: string, role
 
     if (error) throw error
 
-    // Create user profile in users table
+    // Log successful signup
     if (data.user) {
-      const { error: profileError } = await supabase.from("users").insert({
-        id: data.user.id,
+      await logAuditEvent("user_signup", data.user.id, {
         email: validatedEmail,
+        role,
         name: validatedName,
-        role: role,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       })
-
-      if (profileError) {
-        console.error("Profile creation error:", profileError)
-        // Don't throw here as the auth user was created successfully
-      }
-
-      // Log successful signup
-      await logAuditEvent("user_signup", data.user.id, { email: validatedEmail, role })
     }
 
     return { data, error: null }
@@ -114,6 +91,7 @@ export async function signIn(email: string, password: string, rememberMe = false
       throw new Error("Too many login attempts. Please try again later.")
     }
 
+    // Sign in with Supabase
     const { data, error } = await supabase.auth.signInWithPassword({
       email: validatedEmail,
       password: validatedPassword,
@@ -121,26 +99,31 @@ export async function signIn(email: string, password: string, rememberMe = false
 
     if (error) {
       // Log failed login attempt
-      await logAuditEvent("failed_login", null, { email: validatedEmail, error: error.message })
+      await logAuditEvent("failed_login", null, {
+        email: validatedEmail,
+        error: error.message,
+        ip: await getClientIP(),
+      })
       throw error
     }
 
     // Update user login stats
     if (data.user) {
-      const { error: updateError } = await supabase
+      await supabase
         .from("users")
         .update({
           last_login: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          login_count: supabase.raw("login_count + 1"),
+          failed_login_attempts: 0,
+          locked_until: null,
         })
         .eq("id", data.user.id)
 
-      if (updateError) {
-        console.error("Login stats update error:", updateError)
-      }
-
       // Log successful login
-      await logAuditEvent("user_login", data.user.id, { email: validatedEmail })
+      await logAuditEvent("user_login", data.user.id, {
+        email: validatedEmail,
+        ip: await getClientIP(),
+      })
     }
 
     return { data, error: null }
@@ -159,7 +142,9 @@ export async function signOut() {
     const { error } = await supabase.auth.signOut()
 
     if (user) {
-      await logAuditEvent("user_logout", user.id, {})
+      await logAuditEvent("user_logout", user.id, {
+        ip: await getClientIP(),
+      })
     }
 
     return { error }
@@ -178,12 +163,12 @@ export async function getCurrentUser() {
     if (error) throw error
 
     if (user) {
-      // Get additional user data from users table
+      // Get additional user data from our users table
       const { data: userData, error: userError } = await supabase.from("users").select("*").eq("id", user.id).single()
 
       if (userError) {
-        console.error("User data fetch error:", userError)
-        // Return basic user data if profile fetch fails
+        console.error("Error fetching user data:", userError)
+        // Return basic user data if extended data fetch fails
         return { user, error: null }
       }
 
@@ -211,7 +196,10 @@ export async function resetPassword(email: string) {
 
     if (error) throw error
 
-    await logAuditEvent("password_reset_request", null, { email: validatedEmail })
+    await logAuditEvent("password_reset_request", null, {
+      email: validatedEmail,
+      ip: await getClientIP(),
+    })
 
     return { error: null }
   } catch (error: any) {
@@ -234,20 +222,43 @@ export async function updatePassword(newPassword: string) {
       data: { user },
     } = await supabase.auth.getUser()
     if (user) {
-      await supabase
-        .from("users")
-        .update({
-          password_changed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
+      await supabase.from("users").update({ password_changed_at: new Date().toISOString() }).eq("id", user.id)
 
-      await logAuditEvent("password_changed", user.id, {})
+      await logAuditEvent("password_changed", user.id, {
+        ip: await getClientIP(),
+      })
     }
 
     return { error: null }
   } catch (error: any) {
     return { error: error.message || "Password update failed" }
+  }
+}
+
+// Audit logging function
+async function logAuditEvent(action: string, userId: string | null, details: any) {
+  try {
+    await supabase.from("audit_logs").insert({
+      user_id: userId,
+      action,
+      new_values: details,
+      ip_address: details.ip,
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.error("Audit logging failed:", error)
+  }
+}
+
+// Get client IP address
+async function getClientIP(): Promise<string | null> {
+  try {
+    const response = await fetch("https://api.ipify.org?format=json")
+    const data = await response.json()
+    return data.ip
+  } catch (error) {
+    return null
   }
 }
 
@@ -266,7 +277,7 @@ export async function isAuthenticated() {
 export async function getUserRole() {
   try {
     const { user } = await getCurrentUser()
-    return user?.role || user?.user_metadata?.role || null
+    return user?.role || null
   } catch (error) {
     return null
   }
@@ -277,13 +288,69 @@ export async function checkUserPermissions(requiredRole: string) {
     const { user } = await getCurrentUser()
     if (!user) return false
 
-    const userRole = user.role || user.user_metadata?.role
     const roleHierarchy = { admin: 3, farmer: 2, investor: 1 }
-    const userLevel = roleHierarchy[userRole as keyof typeof roleHierarchy] || 0
+    const userLevel = roleHierarchy[user.role as keyof typeof roleHierarchy] || 0
     const requiredLevel = roleHierarchy[requiredRole as keyof typeof roleHierarchy] || 0
 
     return userLevel >= requiredLevel
   } catch (error) {
     return false
+  }
+}
+
+// Admin functions
+export async function createUser(email: string, password: string, name: string, role: string) {
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      user_metadata: { name, role },
+      email_confirm: true,
+    })
+
+    if (error) throw error
+
+    return { data, error: null }
+  } catch (error: any) {
+    return { data: null, error: error.message || "User creation failed" }
+  }
+}
+
+export async function updateUserRole(userId: string, newRole: string) {
+  try {
+    const { error } = await supabase.from("users").update({ role: newRole }).eq("id", userId)
+
+    if (error) throw error
+
+    await logAuditEvent("user_role_updated", userId, {
+      new_role: newRole,
+      ip: await getClientIP(),
+    })
+
+    return { error: null }
+  } catch (error: any) {
+    return { error: error.message || "Role update failed" }
+  }
+}
+
+export async function getUsers(page = 1, limit = 10, role?: string) {
+  try {
+    let query = supabase
+      .from("users")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range((page - 1) * limit, page * limit - 1)
+
+    if (role) {
+      query = query.eq("role", role)
+    }
+
+    const { data, error, count } = await query
+
+    if (error) throw error
+
+    return { data, error: null, count }
+  } catch (error: any) {
+    return { data: null, error: error.message || "Failed to fetch users", count: 0 }
   }
 }

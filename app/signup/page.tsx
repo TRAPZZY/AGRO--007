@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Leaf, AlertCircle, CheckCircle } from "lucide-react"
+import { Leaf, AlertCircle, CheckCircle, Info } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { signUp } from "@/lib/auth"
@@ -34,6 +34,21 @@ export default function SignupPage() {
     setSuccess("")
 
     // Validation
+    if (!formData.name.trim()) {
+      setError("Please enter your full name")
+      return
+    }
+
+    if (!formData.email.trim()) {
+      setError("Please enter your email address")
+      return
+    }
+
+    if (!formData.password) {
+      setError("Please enter a password")
+      return
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match")
       return
@@ -49,6 +64,13 @@ export default function SignupPage() {
       return
     }
 
+    // Check for valid email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(formData.email)) {
+      setError("Please enter a valid email address")
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -60,10 +82,20 @@ export default function SignupPage() {
       }
 
       if (data?.user) {
-        setSuccess("Account created successfully! Redirecting to login...")
+        setSuccess("Account created successfully! Please check your email to verify your account before signing in.")
+        // Clear form
+        setFormData({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          role: "",
+        })
+
+        // Redirect to login after a delay
         setTimeout(() => {
           router.push("/login")
-        }, 2000)
+        }, 3000)
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred")
@@ -198,6 +230,17 @@ export default function SignupPage() {
                   Sign in here
                 </Link>
               </p>
+            </div>
+
+            {/* Production info */}
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-blue-800">
+                  <strong>Production Environment:</strong> Your account will be created in our secure database. Please
+                  verify your email address after signing up.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

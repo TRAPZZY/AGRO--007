@@ -39,7 +39,7 @@ export default function LoginPage() {
 
       if (data?.user) {
         setSuccess("Login successful! Redirecting...")
-        const userRole = data.user.user_metadata?.role || "investor"
+        const userRole = data.user.role || data.user.user_metadata?.role || "investor"
 
         setTimeout(() => {
           if (userRole === "farmer") {

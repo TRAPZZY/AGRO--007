@@ -1,6 +1,4 @@
-export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
-
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       users: {
@@ -10,30 +8,40 @@ export interface Database {
           name: string
           role: "farmer" | "investor" | "admin"
           phone: string | null
-          location: string | null
+          address: string | null
           bio: string | null
           profile_image_url: string | null
           kyc_status: "pending" | "approved" | "rejected"
-          kyc_documents: Json | null
+          kyc_document_url: string | null
           is_verified: boolean
+          total_invested: number
+          total_earned: number
+          login_count: number
           last_login: string | null
+          failed_login_attempts: number
+          locked_until: string | null
           password_changed_at: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
-          id?: string
+          id: string
           email: string
           name: string
           role: "farmer" | "investor" | "admin"
           phone?: string | null
-          location?: string | null
+          address?: string | null
           bio?: string | null
           profile_image_url?: string | null
           kyc_status?: "pending" | "approved" | "rejected"
-          kyc_documents?: Json | null
+          kyc_document_url?: string | null
           is_verified?: boolean
+          total_invested?: number
+          total_earned?: number
+          login_count?: number
           last_login?: string | null
+          failed_login_attempts?: number
+          locked_until?: string | null
           password_changed_at?: string | null
           created_at?: string
           updated_at?: string
@@ -44,13 +52,18 @@ export interface Database {
           name?: string
           role?: "farmer" | "investor" | "admin"
           phone?: string | null
-          location?: string | null
+          address?: string | null
           bio?: string | null
           profile_image_url?: string | null
           kyc_status?: "pending" | "approved" | "rejected"
-          kyc_documents?: Json | null
+          kyc_document_url?: string | null
           is_verified?: boolean
+          total_invested?: number
+          total_earned?: number
+          login_count?: number
           last_login?: string | null
+          failed_login_attempts?: number
+          locked_until?: string | null
           password_changed_at?: string | null
           created_at?: string
           updated_at?: string
@@ -62,19 +75,24 @@ export interface Database {
           farmer_id: string
           title: string
           description: string
-          category: string
           location: string
+          project_type: string
           funding_goal: number
           current_funding: number
           min_investment: number
-          expected_return: number
-          duration_months: number
+          expected_duration: number
+          expected_roi: number
           status: "draft" | "active" | "funded" | "completed" | "cancelled"
-          images: string[] | null
-          documents: string[] | null
-          risk_level: "low" | "medium" | "high"
+          images: string[]
+          documents: string[]
+          tags: string[]
           start_date: string | null
           end_date: string | null
+          progress_percentage: number
+          risk_level: number
+          investor_count: number
+          is_featured: boolean
+          views_count: number
           created_at: string
           updated_at: string
         }
@@ -83,19 +101,24 @@ export interface Database {
           farmer_id: string
           title: string
           description: string
-          category: string
           location: string
+          project_type: string
           funding_goal: number
           current_funding?: number
-          min_investment: number
-          expected_return: number
-          duration_months: number
+          min_investment?: number
+          expected_duration: number
+          expected_roi: number
           status?: "draft" | "active" | "funded" | "completed" | "cancelled"
-          images?: string[] | null
-          documents?: string[] | null
-          risk_level?: "low" | "medium" | "high"
+          images?: string[]
+          documents?: string[]
+          tags?: string[]
           start_date?: string | null
           end_date?: string | null
+          progress_percentage?: number
+          risk_level?: number
+          investor_count?: number
+          is_featured?: boolean
+          views_count?: number
           created_at?: string
           updated_at?: string
         }
@@ -104,19 +127,24 @@ export interface Database {
           farmer_id?: string
           title?: string
           description?: string
-          category?: string
           location?: string
+          project_type?: string
           funding_goal?: number
           current_funding?: number
           min_investment?: number
-          expected_return?: number
-          duration_months?: number
+          expected_duration?: number
+          expected_roi?: number
           status?: "draft" | "active" | "funded" | "completed" | "cancelled"
-          images?: string[] | null
-          documents?: string[] | null
-          risk_level?: "low" | "medium" | "high"
+          images?: string[]
+          documents?: string[]
+          tags?: string[]
           start_date?: string | null
           end_date?: string | null
+          progress_percentage?: number
+          risk_level?: number
+          investor_count?: number
+          is_featured?: boolean
+          views_count?: number
           created_at?: string
           updated_at?: string
         }
@@ -124,71 +152,45 @@ export interface Database {
       investments: {
         Row: {
           id: string
-          investor_id: string
           project_id: string
+          investor_id: string
           amount: number
-          status: "pending" | "active" | "completed" | "cancelled"
+          status: "pending" | "confirmed" | "cancelled"
           expected_return: number | null
           actual_return: number | null
           investment_date: string
-          maturity_date: string | null
+          return_date: string | null
+          notes: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
+          project_id: string
           investor_id: string
-          project_id: string
           amount: number
-          status?: "pending" | "active" | "completed" | "cancelled"
+          status?: "pending" | "confirmed" | "cancelled"
           expected_return?: number | null
           actual_return?: number | null
           investment_date?: string
-          maturity_date?: string | null
+          return_date?: string | null
+          notes?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
+          project_id?: string
           investor_id?: string
-          project_id?: string
           amount?: number
-          status?: "pending" | "active" | "completed" | "cancelled"
+          status?: "pending" | "confirmed" | "cancelled"
           expected_return?: number | null
           actual_return?: number | null
           investment_date?: string
-          maturity_date?: string | null
+          return_date?: string | null
+          notes?: string | null
           created_at?: string
           updated_at?: string
-        }
-      }
-      project_updates: {
-        Row: {
-          id: string
-          project_id: string
-          title: string
-          content: string
-          images: string[] | null
-          update_type: "general" | "milestone" | "financial" | "risk"
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          project_id: string
-          title: string
-          content: string
-          images?: string[] | null
-          update_type?: "general" | "milestone" | "financial" | "risk"
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          project_id?: string
-          title?: string
-          content?: string
-          images?: string[] | null
-          update_type?: "general" | "milestone" | "financial" | "risk"
-          created_at?: string
         }
       }
       notifications: {
@@ -197,8 +199,8 @@ export interface Database {
           user_id: string
           title: string
           message: string
-          type: "info" | "success" | "warning" | "error"
-          is_read: boolean
+          type: string
+          read: boolean
           action_url: string | null
           created_at: string
         }
@@ -207,8 +209,8 @@ export interface Database {
           user_id: string
           title: string
           message: string
-          type: "info" | "success" | "warning" | "error"
-          is_read?: boolean
+          type: string
+          read?: boolean
           action_url?: string | null
           created_at?: string
         }
@@ -217,8 +219,8 @@ export interface Database {
           user_id?: string
           title?: string
           message?: string
-          type?: "info" | "success" | "warning" | "error"
-          is_read?: boolean
+          type?: string
+          read?: boolean
           action_url?: string | null
           created_at?: string
         }
@@ -228,7 +230,10 @@ export interface Database {
           id: string
           user_id: string | null
           action: string
-          details: Json | null
+          table_name: string | null
+          record_id: string | null
+          old_values: Record<string, any> | null
+          new_values: Record<string, any> | null
           ip_address: string | null
           user_agent: string | null
           created_at: string
@@ -237,7 +242,10 @@ export interface Database {
           id?: string
           user_id?: string | null
           action: string
-          details?: Json | null
+          table_name?: string | null
+          record_id?: string | null
+          old_values?: Record<string, any> | null
+          new_values?: Record<string, any> | null
           ip_address?: string | null
           user_agent?: string | null
           created_at?: string
@@ -246,24 +254,15 @@ export interface Database {
           id?: string
           user_id?: string | null
           action?: string
-          details?: Json | null
+          table_name?: string | null
+          record_id?: string | null
+          old_values?: Record<string, any> | null
+          new_values?: Record<string, any> | null
           ip_address?: string | null
           user_agent?: string | null
           created_at?: string
         }
       }
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      [_ in never]: never
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
     }
   }
 }
